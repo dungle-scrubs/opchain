@@ -53,6 +53,30 @@ opchain varlock run -- ./start.sh
 opchain printenv | grep OP_SERVICE_ACCOUNT_TOKEN
 ```
 
+## Working with .env Files
+
+For projects that expect environment variables, create a `.env.op` template (safe to commit):
+
+```bash
+# .env.op
+GEMINI_API_KEY=op://Personal/Gemini/credential
+DATABASE_URL=op://Dev/Postgres/connection-string
+```
+
+Run with secrets injected:
+
+```bash
+opchain op run --env-file=.env.op -- npm run dev
+```
+
+For projects that require an actual `.env` file on disk:
+
+```bash
+opchain op inject -i .env.op -o .env
+npm run dev
+rm .env
+```
+
 ## Why?
 
 - **LLM-proof**: Token stays in Keychain, never in shell history or config files
