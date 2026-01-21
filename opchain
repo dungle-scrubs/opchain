@@ -1,0 +1,56 @@
+#!/bin/bash
+# opchain - Run commands with OP_SERVICE_ACCOUNT_TOKEN from Keychain
+#
+# Usage:
+#   opchain <command> [args...]
+#   opchain op read "op://vault/item/field"
+#   opchain op run -- node server.js
+#
+# The command inherits OP_SERVICE_ACCOUNT_TOKEN, enabling the 1Password CLI
+# without exposing the token to shell history or LLMs.
+
+set -e
+
+KEYCHAIN_SERVICE="dev-secrets"
+SECRET_NAME="OP_SERVICE_ACCOUNT_TOKEN"
+
+show_help() {
+    cat << 'EOF'
+opchain - Run commands with 1Password service account token from Keychain
+
+USAGE:
+    opchain <command> [args...]
+
+EXAMPLES:
+    opchain op read "op://vault/item/field"
+    opchain op run -- node server.js
+    opchain varlock run -- ./start.sh
+    opchain printenv | grep OP_SERVICE_ACCOUNT_TOKEN
+
+SETUP:
+    # Store your 1Password service account token in Keychain:
+    security add-generic-password -a dev-secrets -s OP_SERVICE_ACCOUNT_TOKEN -w
+
+REQUIREMENTS:
+    - macOS Keychain with OP_SERVICE_ACCOUNT_TOKEN stored
+    - Keychain item access set to "Allow all applications" (avoids biometric prompts)
+
+EOF
+    exit 0
+}
+
+[ "$1" = "-h" ] || [ "$1" = "--help" ] && show_help
+[ $# -eq 0 ] && { echo "Usage: opchain <command> [args...]" >&2; exit 1; }
+
+# Fetch token from Keychain
+TOKEN=$(security find-generic-password -a "$KEYCHAIN_SERVICE" -s "$SECRET_NAME" -w 2>/dev/null) || {
+    echo "Error: $SECRET_NAME not found in Keychain" >&2
+    echo "" >&2
+    echo "Add it with:" >&2
+    echo "  security add-generic-password -a dev-secrets -s OP_SERVICE_ACCOUNT_TOKEN -w" >&2
+    exit 1
+}
+
+# Export and run command
+export OP_SERVICE_ACCOUNT_TOKEN="$TOKEN"
+exec "$@"
