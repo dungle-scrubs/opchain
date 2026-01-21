@@ -11,7 +11,7 @@
 
 set -e
 
-KEYCHAIN_SERVICE="dev-secrets"
+KEYCHAIN_SERVICE="${OPCHAIN_KEYCHAIN_SERVICE:-opchain}"
 SECRET_NAME="OP_SERVICE_ACCOUNT_TOKEN"
 
 show_help() {
@@ -29,7 +29,10 @@ EXAMPLES:
 
 SETUP:
     # Store your 1Password service account token in Keychain:
-    security add-generic-password -a dev-secrets -s OP_SERVICE_ACCOUNT_TOKEN -w
+    security add-generic-password -a opchain -s OP_SERVICE_ACCOUNT_TOKEN -w
+
+ENVIRONMENT:
+    OPCHAIN_KEYCHAIN_SERVICE  Keychain account name (default: opchain)
 
 REQUIREMENTS:
     - macOS Keychain with OP_SERVICE_ACCOUNT_TOKEN stored
@@ -47,7 +50,7 @@ TOKEN=$(security find-generic-password -a "$KEYCHAIN_SERVICE" -s "$SECRET_NAME" 
     echo "Error: $SECRET_NAME not found in Keychain" >&2
     echo "" >&2
     echo "Add it with:" >&2
-    echo "  security add-generic-password -a dev-secrets -s OP_SERVICE_ACCOUNT_TOKEN -w" >&2
+    echo "  security add-generic-password -a $KEYCHAIN_SERVICE -s OP_SERVICE_ACCOUNT_TOKEN -w" >&2
     exit 1
 }
 
