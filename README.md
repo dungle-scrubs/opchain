@@ -31,7 +31,7 @@ Creates a symlink at `~/.local/bin/opchain`. Ensure `~/.local/bin` is in your `P
 Store your 1Password service account token in Keychain:
 
 ```bash
-security add-generic-password -a dev-secrets -s OP_SERVICE_ACCOUNT_TOKEN -w
+security add-generic-password -a opchain -s OP_SERVICE_ACCOUNT_TOKEN -w
 # (prompts for the token value)
 ```
 
@@ -59,10 +59,15 @@ opchain printenv | grep OP_SERVICE_ACCOUNT_TOKEN
 - **Reusable**: Works with `op`, varlock, or any tool that reads `OP_SERVICE_ACCOUNT_TOKEN`
 - **Fallback-friendly**: Projects can still use `.env` files for contributors without 1Password
 
+## Configuration
+
+| Environment Variable | Description | Default |
+|---------------------|-------------|---------|
+| `OPCHAIN_KEYCHAIN_SERVICE` | Keychain account name | `opchain` |
+
 ## Known Limitations
 
 - macOS only (requires Keychain)
-- Hardcoded keychain account name (`dev-secrets`)
 - Hardcoded secret name (`OP_SERVICE_ACCOUNT_TOKEN`)
 - Install path fixed to `~/.local/bin`
 
