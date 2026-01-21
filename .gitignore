@@ -1,0 +1,17 @@
+# Logs
+logs/
+*.log
+
+# macOS
+.DS_Store
+
+# Editor
+*.swp
+*~
+
+# Environment
+.env
+.env.local
+
+# Claude Code
+.claude/
