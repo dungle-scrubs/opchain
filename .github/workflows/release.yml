@@ -20,13 +20,12 @@ jobs:
   update-formula:
     needs: release
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout tap repo
+        uses: actions/checkout@v4
         with:
-          ref: main
+          repository: dungle-scrubs/homebrew-opchain
+          token: ${{ secrets.TAP_GITHUB_TOKEN }}
 
       - name: Download source tarball and calculate SHA
         run: |
@@ -36,22 +35,17 @@ jobs:
 
       - name: Update formula
         run: |
-          sed -i "s/sha256 \".*\"/sha256 \"$SHA256\"/" Formula/opchain.rb
-          sed -i "s|/v[0-9]*\.[0-9]*\.[0-9]*.tar.gz|/${{ github.ref_name }}.tar.gz|g" Formula/opchain.rb
+          sed -i "s/sha256 \".*\"/sha256 \"$SHA256\"/" opchain.rb
+          sed -i "s|/v[0-9]*\.[0-9]*\.[0-9]*.tar.gz|/${{ github.ref_name }}.tar.gz|g" opchain.rb
 
-      - name: Create PR for formula update
+      - name: Push formula update
         run: |
           git config user.name github-actions
           git config user.email github-actions@github.com
-          BRANCH="formula-${{ github.ref_name }}"
-          git checkout -b "$BRANCH"
-          git add Formula/opchain.rb
+          git add opchain.rb
           if git diff --staged --quiet; then
             echo "No changes to formula"
             exit 0
           fi
-          git commit -m "Update formula for ${{ github.ref_name }}"
-          git push origin "$BRANCH"
-          gh pr create --title "Update formula for ${{ github.ref_name }}" --body "Auto-generated PR to update Homebrew formula SHA256 for release ${{ github.ref_name }}." --base main --head "$BRANCH"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          git commit -m "Update opchain to ${{ github.ref_name }}"
+          git push
