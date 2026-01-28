@@ -3,7 +3,7 @@
 [![CI](https://github.com/dungle-scrubs/opchain/actions/workflows/ci.yml/badge.svg)](https://github.com/dungle-scrubs/opchain/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Run commands with `OP_SERVICE_ACCOUNT_TOKEN` from macOS Keychain. Enables the 1Password CLI (`op`) and tools that depend on it to authenticate via service account without exposing the token in shell history or config files.
+Dual-token 1Password wrapper with automatic least-privilege token selection and secrets management. Picks a read-only or read-write service account token from macOS Keychain based on the `op` subcommand being run.
 
 ## Requirements
 
@@ -28,34 +28,107 @@ Creates a symlink at `~/.local/bin/opchain`. Ensure `~/.local/bin` is in your `P
 
 ## Setup
 
-Store your 1Password service account token in Keychain:
+Store both tokens in Keychain with the interactive setup:
 
 ```bash
-security add-generic-password -a opchain -s OP_SERVICE_ACCOUNT_TOKEN -w
-# (prompts for the token value)
+opchain setup
 ```
 
-Set the keychain item to "Allow all applications" access to avoid biometric prompts during automation.
+This prompts for a **read-only** and **read-write** 1Password service account token and stores them as separate Keychain entries.
+
+Set each keychain item to "Allow all applications" access to avoid biometric prompts during automation.
 
 ## Usage
 
+### Token auto-selection
+
+opchain automatically picks the least-privilege token:
+
 ```bash
-# Run 1Password CLI commands
-opchain op read "op://vault/item/field"
-
-# Inject secrets into environment via op run
-opchain op run -- node server.js
-
-# Run varlock (or any tool using op under the hood)
+# Read token (default for reads and non-op commands)
+opchain op vault list
+opchain op item get --vault Dev "api-key"
 opchain varlock run -- ./start.sh
 
-# Verify it works
-opchain printenv | grep OP_SERVICE_ACCOUNT_TOKEN
+# Write token (auto-detected for mutating op commands)
+opchain op item create --vault Dev --title "api-key"
+opchain op item edit "api-key" --vault Dev
+opchain op item delete "api-key"
 ```
 
-## Working with .env Files
+### Expiry date on create/edit
 
-For projects that expect environment variables, create a `.env.op` template (safe to commit):
+Use `--expires` to set an expiration date when creating or editing items:
+
+```bash
+# Instead of remembering op's field syntax:
+opchain op item create --vault Dev --title "api-key" --expires 2026-06-15
+
+# Translates to: op item create --vault Dev --title "api-key" --category "API Credential" "expires[date]=2026-06-15"
+# Auto-tracks the item for expiry monitoring
+```
+
+When `--expires` is used with `op item create` and no `--category` is specified, opchain defaults to `--category "API Credential"`.
+
+Works with `op item edit` too:
+
+```bash
+opchain op item edit "api-key" --vault Dev --expires 2026-12-31
+```
+
+### Token expiry tracking
+
+Track items with expiration dates and check their status:
+
+```bash
+# List tracked items with expiry status
+opchain expires
+
+# Manually track an item
+opchain expires add op://Dev/api-key
+
+# Stop tracking
+opchain expires remove op://Dev/api-key
+```
+
+Output shows status based on the configured threshold (default: 14 days):
+
+```
+==> Tracked Items
+  OK       op://Dev/api-key (2026-06-15, 138 days)
+  EXPIRING op://Admin/service-token (2026-02-10, 13 days)
+  EXPIRED  op://Prod/old-key (2026-01-15, 13 days ago)
+  FAIL     op://Dev/missing-item (could not read)
+```
+
+Expiry warnings also appear after `opchain secrets validate` when items are expiring or expired.
+
+### Force a specific token
+
+```bash
+opchain --read op vault list       # force read token
+opchain --write op vault list      # force write token
+```
+
+### Secrets management
+
+Manage `op://` references in `.env.op` files across projects:
+
+```bash
+# List op:// references in .env.op files
+opchain secrets list .
+opchain secrets list path/to/.env.op
+
+# Check if each op:// reference resolves
+opchain secrets check .env.op
+
+# Validate all .env.op files under ~/dev/
+opchain secrets validate
+```
+
+### Working with .env files
+
+Create a `.env.op` template (safe to commit):
 
 ```bash
 # .env.op
@@ -69,31 +142,41 @@ Run with secrets injected:
 opchain op run --env-file=.env.op -- npm run dev
 ```
 
-For projects that require an actual `.env` file on disk:
+## Write command detection
 
-```bash
-opchain op inject -i .env.op -o .env
-npm run dev
-rm .env
-```
+These `op` subcommand + action pairs trigger the write token:
 
-## Why?
+| Subcommand | Actions |
+|------------|---------|
+| `item` | `create`, `edit`, `delete`, `share` |
+| `vault` | `create`, `edit`, `delete` |
+| `document` | `create`, `edit`, `delete` |
+| `group` | `create`, `edit`, `delete` |
 
-- **LLM-proof**: Token stays in Keychain, never in shell history or config files
-- **Reusable**: Works with `op`, varlock, or any tool that reads `OP_SERVICE_ACCOUNT_TOKEN`
-- **Fallback-friendly**: Projects can still use `.env` files for contributors without 1Password
+Everything else uses the read token. Non-`op` commands (e.g., `varlock`) always use read.
 
 ## Configuration
 
-| Environment Variable | Description | Default |
-|---------------------|-------------|---------|
-| `OPCHAIN_KEYCHAIN_SERVICE` | Keychain account name | `opchain` |
+### Config file
 
-## Known Limitations
+`~/.config/opchain/config` (optional):
 
-- macOS only (requires Keychain)
-- Hardcoded secret name (`OP_SERVICE_ACCOUNT_TOKEN`)
-- Install path fixed to `~/.local/bin`
+```
+projects_dir=~/dev
+read_account=opchain-read
+write_account=opchain-write
+```
+
+### Environment variables
+
+Environment variables override the config file, which overrides defaults.
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `OPCHAIN_PROJECTS_DIR` | Directory for `secrets validate` | `~/dev` |
+| `OPCHAIN_READ_ACCOUNT` | Keychain account for read token | `opchain-read` |
+| `OPCHAIN_WRITE_ACCOUNT` | Keychain account for write token | `opchain-write` |
+| `OPCHAIN_EXPIRES_THRESHOLD` | Days before expiry to warn | `14` |
 
 ## Uninstall
 
