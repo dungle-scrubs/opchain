@@ -34,8 +34,72 @@ jobs:
           test -x install.sh
           test -x uninstall.sh
 
-      - name: Test help flag
+      - name: Test --help flag
         run: ./opchain --help
+
+      - name: Test -h flag
+        run: ./opchain -h
+
+      - name: Test --version flag
+        run: |
+          output=$(./opchain --version)
+          echo "$output"
+          [[ "$output" == opchain\ * ]]
+
+      - name: Test no-args exits with error
+        run: |
+          ! ./opchain
+
+      - name: Test unknown flag exits with error
+        run: |
+          ! ./opchain --bogus
+
+      - name: Test secrets list with no .env.op files
+        run: |
+          tmpdir=$(mktemp -d)
+          ./opchain secrets list "$tmpdir" 2>&1 | grep -q "No .env.op files"
+
+      - name: Test secrets list with .env.op file
+        run: |
+          tmpdir=$(mktemp -d)
+          echo "KEY=op://vault/item/field" > "$tmpdir/.env.op"
+          output=$(./opchain secrets list "$tmpdir")
+          echo "$output"
+          echo "$output" | grep -q "KEY=op://vault/item/field"
+
+      - name: Test secrets subcommand with no action
+        run: |
+          ! ./opchain secrets
+
+      - name: Test expires with no watch file
+        run: |
+          output=$(./opchain expires 2>&1)
+          echo "$output"
+          echo "$output" | grep -q "No items tracked"
+
+      - name: Test expires add
+        run: |
+          ./opchain expires add op://Dev/test-item
+          grep -q "op://Dev/test-item" "${XDG_CONFIG_HOME:-$HOME/.config}/opchain/expires"
+
+      - name: Test expires add duplicate
+        run: |
+          ./opchain expires add op://Dev/test-item
+          count=$(grep -c "op://Dev/test-item" "${XDG_CONFIG_HOME:-$HOME/.config}/opchain/expires")
+          [[ "$count" -eq 1 ]]
+
+      - name: Test expires remove
+        run: |
+          ./opchain expires remove op://Dev/test-item
+          ! grep -q "op://Dev/test-item" "${XDG_CONFIG_HOME:-$HOME/.config}/opchain/expires"
+
+      - name: Test expires add validates op:// prefix
+        run: |
+          ! ./opchain expires add "not-a-ref" 2>&1 | grep -q "must start with op://"
+
+      - name: Test expires subcommand with invalid action
+        run: |
+          ! ./opchain expires bogus
 
       - name: Test install/uninstall
         run: |
