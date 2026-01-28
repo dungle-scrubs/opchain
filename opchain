@@ -1,59 +1,651 @@
 #!/bin/bash
-# opchain - Run commands with OP_SERVICE_ACCOUNT_TOKEN from Keychain
+# opchain - Dual-token 1Password wrapper with secrets management
 #
-# Usage:
-#   opchain <command> [args...]
-#   opchain op read "op://vault/item/field"
-#   opchain op run -- node server.js
-#
-# The command inherits OP_SERVICE_ACCOUNT_TOKEN, enabling the 1Password CLI
-# without exposing the token to shell history or LLMs.
+# Automatically selects read-only or read-write service account tokens
+# from macOS Keychain based on the op subcommand being run.
 
-set -e
+set -euo pipefail
 
-KEYCHAIN_SERVICE="${OPCHAIN_KEYCHAIN_SERVICE:-opchain}"
+VERSION="0.3.0"
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/opchain"
+CONFIG_FILE="$CONFIG_DIR/config"
 SECRET_NAME="OP_SERVICE_ACCOUNT_TOKEN"
 
+# Defaults (overridden by config file, then env vars)
+DEFAULT_PROJECTS_DIR="$HOME/dev"
+DEFAULT_READ_ACCOUNT="opchain-read"
+DEFAULT_WRITE_ACCOUNT="opchain-write"
+EXPIRES_FILE="$CONFIG_DIR/expires"
+DEFAULT_EXPIRES_THRESHOLD=14
+
+# --- Config ---
+
+load_config() {
+    local projects_dir="$DEFAULT_PROJECTS_DIR"
+    local read_account="$DEFAULT_READ_ACCOUNT"
+    local write_account="$DEFAULT_WRITE_ACCOUNT"
+    local expires_threshold="$DEFAULT_EXPIRES_THRESHOLD"
+
+    # Config file overrides defaults
+    if [[ -f "$CONFIG_FILE" ]]; then
+        local key value
+        while IFS='=' read -r key value; do
+            [[ -z "$key" || "$key" =~ ^# ]] && continue
+            key=$(echo "$key" | xargs)
+            value=$(echo "$value" | xargs)
+            case "$key" in
+                projects_dir)      projects_dir="$value" ;;
+                read_account)      read_account="$value" ;;
+                write_account)     write_account="$value" ;;
+                expires_threshold) expires_threshold="$value" ;;
+            esac
+        done < "$CONFIG_FILE"
+    fi
+
+    # Env vars override config file
+    PROJECTS_DIR="${OPCHAIN_PROJECTS_DIR:-$projects_dir}"
+    READ_ACCOUNT="${OPCHAIN_READ_ACCOUNT:-$read_account}"
+    WRITE_ACCOUNT="${OPCHAIN_WRITE_ACCOUNT:-$write_account}"
+    EXPIRES_THRESHOLD="${OPCHAIN_EXPIRES_THRESHOLD:-$expires_threshold}"
+
+    # Expand tilde
+    PROJECTS_DIR="${PROJECTS_DIR/#\~/$HOME}"
+}
+
+# --- Keychain ---
+
+fetch_token() {
+    local account="$1"
+    local token
+    token=$(security find-generic-password -a "$account" -s "$SECRET_NAME" -w 2>/dev/null) || {
+        echo "Error: token not found in Keychain (account: $account)" >&2
+        echo "" >&2
+        echo "Run 'opchain setup' to configure tokens." >&2
+        exit 1
+    }
+    echo "$token"
+}
+
+resolve_token() {
+    local mode="$1"
+    shift
+    case "$mode" in
+        read)  fetch_token "$READ_ACCOUNT" ;;
+        write) fetch_token "$WRITE_ACCOUNT" ;;
+        auto)
+            if is_write_command "$@"; then
+                fetch_token "$WRITE_ACCOUNT"
+            else
+                fetch_token "$READ_ACCOUNT"
+            fi
+            ;;
+    esac
+}
+
+# --- Write detection ---
+
+is_write_command() {
+    # Non-op commands always get read token
+    [[ "${1:-}" != "op" ]] && return 1
+
+    local subcommand="${2:-}"
+    local action="${3:-}"
+
+    case "$subcommand" in
+        item|vault|document|group)
+            case "$action" in
+                create|edit|delete|share) return 0 ;;
+            esac
+            ;;
+    esac
+    return 1
+}
+
+# --- Secrets ---
+
+handle_secrets() {
+    local subcmd="${1:-}"
+    shift || true
+
+    case "$subcmd" in
+        list)     secrets_list "$@" ;;
+        check)    secrets_check "$@" ;;
+        validate) secrets_validate "$@" ;;
+        *)
+            echo "Usage: opchain secrets <list|check|validate> [path]" >&2
+            exit 1
+            ;;
+    esac
+}
+
+secrets_list() {
+    local target="${1:-.}"
+
+    if [[ -f "$target" ]]; then
+        secrets_list_file "$target"
+    elif [[ -d "$target" ]]; then
+        local found=0
+        while IFS= read -r -d '' file; do
+            found=1
+            secrets_list_file "$file"
+        done < <(find "$target" -name '.env.op' -print0 2>/dev/null)
+        if [[ $found -eq 0 ]]; then
+            echo "No .env.op files found in $target" >&2
+        fi
+    else
+        echo "Error: $target not found" >&2
+        exit 1
+    fi
+}
+
+secrets_list_file() {
+    local file="$1"
+    echo "==> $file"
+    while IFS='=' read -r key value; do
+        [[ -z "$key" || "$key" =~ ^[[:space:]]*# ]] && continue
+        key=$(echo "$key" | xargs)
+        value=$(echo "$value" | xargs)
+        if [[ "$value" == op://* ]]; then
+            echo "  $key=$value"
+        fi
+    done < "$file"
+    echo ""
+}
+
+secrets_check() {
+    local target="${1:-.}"
+    local failures=0
+
+    load_config
+    local token
+    token=$(fetch_token "$READ_ACCOUNT")
+    export OP_SERVICE_ACCOUNT_TOKEN="$token"
+
+    if [[ -f "$target" ]]; then
+        secrets_check_file "$target" || failures=$((failures + 1))
+    elif [[ -d "$target" ]]; then
+        while IFS= read -r -d '' file; do
+            secrets_check_file "$file" || failures=$((failures + 1))
+        done < <(find "$target" -name '.env.op' -print0 2>/dev/null)
+    else
+        echo "Error: $target not found" >&2
+        exit 1
+    fi
+
+    if [[ $failures -gt 0 ]]; then
+        exit 1
+    fi
+}
+
+secrets_check_file() {
+    local file="$1"
+    local has_failure=0
+    echo "==> $file"
+    while IFS='=' read -r key value; do
+        [[ -z "$key" || "$key" =~ ^[[:space:]]*# ]] && continue
+        key=$(echo "$key" | xargs)
+        value=$(echo "$value" | xargs)
+        [[ "$value" != op://* ]] && continue
+
+        if op read "$value" > /dev/null 2>&1; then
+            echo "  OK   $key ($value)"
+        else
+            echo "  FAIL $key ($value)"
+            has_failure=1
+        fi
+    done < "$file"
+    echo ""
+    return $has_failure
+}
+
+secrets_validate() {
+    load_config
+    local token
+    token=$(fetch_token "$READ_ACCOUNT")
+    export OP_SERVICE_ACCOUNT_TOKEN="$token"
+
+    local failures=0
+    local found=0
+
+    while IFS= read -r -d '' file; do
+        found=1
+        secrets_check_file "$file" || failures=$((failures + 1))
+    done < <(find "$PROJECTS_DIR" -name '.env.op' -print0 2>/dev/null)
+
+    if [[ $found -eq 0 ]]; then
+        echo "No .env.op files found under $PROJECTS_DIR" >&2
+        exit 1
+    fi
+
+    if [[ $failures -gt 0 ]]; then
+        echo "$failures file(s) with failures" >&2
+        exit 1
+    fi
+
+    echo "All secrets validated."
+    check_expires_warnings
+}
+
+# --- Expires ---
+
+validate_date() {
+    local input="$1"
+    [[ "$input" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || return 1
+    local roundtrip
+    roundtrip=$(date -j -f "%Y-%m-%d" "$input" "+%Y-%m-%d" 2>/dev/null) || return 1
+    [[ "$roundtrip" == "$input" ]]
+}
+
+days_until() {
+    local target="$1"
+    local target_epoch today_epoch
+    target_epoch=$(date -j -f "%Y-%m-%d" "$target" "+%s" 2>/dev/null) || return 1
+    today_epoch=$(date "+%s")
+    echo $(( (target_epoch - today_epoch) / 86400 ))
+}
+
+expires_status() {
+    local days="$1"
+    if [[ $days -lt 0 ]]; then
+        echo "EXPIRED"
+    elif [[ $days -le $EXPIRES_THRESHOLD ]]; then
+        echo "EXPIRING"
+    else
+        echo "OK"
+    fi
+}
+
+load_expires_list() {
+    EXPIRES_ITEMS=()
+    [[ -f "$EXPIRES_FILE" ]] || return 0
+    while IFS= read -r line; do
+        [[ -z "$line" || "$line" =~ ^# ]] && continue
+        EXPIRES_ITEMS+=("$line")
+    done < "$EXPIRES_FILE"
+}
+
+add_expires_item() {
+    local ref="$1"
+    mkdir -p "$CONFIG_DIR"
+    if [[ -f "$EXPIRES_FILE" ]] && grep -qxF "$ref" "$EXPIRES_FILE"; then
+        return 0
+    fi
+    echo "$ref" >> "$EXPIRES_FILE"
+}
+
+remove_expires_item() {
+    local ref="$1"
+    if [[ ! -f "$EXPIRES_FILE" ]]; then
+        echo "No items tracked." >&2
+        return 1
+    fi
+    if ! grep -qxF "$ref" "$EXPIRES_FILE"; then
+        echo "Not tracked: $ref" >&2
+        return 1
+    fi
+    local tmp
+    tmp=$(grep -vxF "$ref" "$EXPIRES_FILE") || true
+    echo "$tmp" > "$EXPIRES_FILE"
+    echo "Removed: $ref"
+}
+
+handle_expires() {
+    local subcmd="${1:-list}"
+    shift || true
+
+    case "$subcmd" in
+        list)   expires_list "$@" ;;
+        add)    expires_add "$@" ;;
+        remove) expires_remove "$@" ;;
+        *)
+            echo "Usage: opchain expires [list|add|remove] [ref]" >&2
+            exit 1
+            ;;
+    esac
+}
+
+expires_list() {
+    load_config
+    load_expires_list
+
+    if [[ ${#EXPIRES_ITEMS[@]} -eq 0 ]]; then
+        echo "No items tracked."
+        echo "Use 'opchain expires add op://vault/item' to track an item."
+        return 0
+    fi
+
+    local token
+    token=$(fetch_token "$READ_ACCOUNT")
+    export OP_SERVICE_ACCOUNT_TOKEN="$token"
+
+    echo "==> Tracked Items"
+    local ref
+    for ref in "${EXPIRES_ITEMS[@]}"; do
+        local date_value
+        if date_value=$(op read "$ref/expires" 2>/dev/null); then
+            local days
+            if days=$(days_until "$date_value"); then
+                local status
+                status=$(expires_status "$days")
+                case "$status" in
+                    EXPIRED)
+                        local ago=$(( -days ))
+                        printf "  %-8s %s (%s, %d days ago)\n" "$status" "$ref" "$date_value" "$ago"
+                        ;;
+                    *)
+                        printf "  %-8s %s (%s, %d days)\n" "$status" "$ref" "$date_value" "$days"
+                        ;;
+                esac
+            else
+                printf "  %-8s %s (invalid date: %s)\n" "FAIL" "$ref" "$date_value"
+            fi
+        else
+            printf "  %-8s %s (could not read)\n" "FAIL" "$ref"
+        fi
+    done
+}
+
+expires_add() {
+    local ref="${1:-}"
+    if [[ -z "$ref" ]]; then
+        echo "Usage: opchain expires add <op://vault/item>" >&2
+        exit 1
+    fi
+    if [[ "$ref" != op://* ]]; then
+        echo "Error: reference must start with op://" >&2
+        exit 1
+    fi
+    add_expires_item "$ref"
+    echo "Tracking: $ref"
+}
+
+expires_remove() {
+    local ref="${1:-}"
+    if [[ -z "$ref" ]]; then
+        echo "Usage: opchain expires remove <op://vault/item>" >&2
+        exit 1
+    fi
+    remove_expires_item "$ref"
+}
+
+check_expires_warnings() {
+    load_expires_list
+    [[ ${#EXPIRES_ITEMS[@]} -gt 0 ]] || return 0
+
+    local warnings=()
+    local ref
+    for ref in "${EXPIRES_ITEMS[@]}"; do
+        local date_value
+        if date_value=$(op read "$ref/expires" 2>/dev/null); then
+            local days
+            if days=$(days_until "$date_value"); then
+                local status
+                status=$(expires_status "$days")
+                case "$status" in
+                    EXPIRED)
+                        local ago=$(( -days ))
+                        warnings+=("$(printf "  %-8s %s (%s, %d days ago)" "$status" "$ref" "$date_value" "$ago")")
+                        ;;
+                    EXPIRING)
+                        warnings+=("$(printf "  %-8s %s (%s, %d days)" "$status" "$ref" "$date_value" "$days")")
+                        ;;
+                esac
+            fi
+        fi
+    done
+
+    if [[ ${#warnings[@]} -gt 0 ]]; then
+        echo ""
+        echo "==> Expiry Warnings"
+        for line in "${warnings[@]}"; do
+            echo "$line"
+        done
+    fi
+}
+
+# --- Setup ---
+
+setup_interactive() {
+    echo "opchain setup — store dual tokens in macOS Keychain"
+    echo ""
+
+    load_config
+
+    local accounts=("$READ_ACCOUNT" "$WRITE_ACCOUNT")
+    local labels=("Read-only" "Read-write")
+
+    for i in 0 1; do
+        local account="${accounts[$i]}"
+        local label="${labels[$i]}"
+
+        echo "--- $label token (account: $account) ---"
+
+        # Check for existing entry
+        if security find-generic-password -a "$account" -s "$SECRET_NAME" > /dev/null 2>&1; then
+            echo "  Existing entry found."
+            read -rp "  Overwrite? [y/N] " confirm
+            if [[ "$confirm" != [yY] ]]; then
+                echo "  Skipped."
+                echo ""
+                continue
+            fi
+            security delete-generic-password -a "$account" -s "$SECRET_NAME" > /dev/null 2>&1 || true
+        fi
+
+        read -rsp "  Paste token: " token
+        echo ""
+
+        if [[ -z "$token" ]]; then
+            echo "  Empty token, skipped."
+            echo ""
+            continue
+        fi
+
+        security add-generic-password -a "$account" -s "$SECRET_NAME" -w "$token"
+        echo "  Stored."
+        echo ""
+    done
+
+    echo "Done. Tokens stored in login keychain."
+    echo "Set keychain items to 'Allow all applications' to avoid biometric prompts."
+}
+
+# --- Help ---
+
 show_help() {
-    cat << 'EOF'
-opchain - Run commands with 1Password service account token from Keychain
+    cat << EOF
+opchain $VERSION — Dual-token 1Password wrapper with secrets management
 
 USAGE:
-    opchain <command> [args...]
+    opchain [--read|--write] <command> [args...]
+    opchain secrets <list|check|validate> [path]
+    opchain expires [list|add|remove] [ref]
+    opchain setup
+    opchain --help | --version
+
+COMMANDS:
+    secrets list [path]      List op:// references in .env.op files
+    secrets check [path]     Resolve each op:// reference, report OK/FAIL
+    secrets validate         Check all .env.op files under projects dir
+    expires [list]           Show tracked items with expiry status
+    expires add <ref>        Track an op:// item for expiry monitoring
+    expires remove <ref>     Stop tracking an item
+    setup                    Store read/write tokens in Keychain
+
+FLAGS:
+    --read       Force read-only token
+    --write      Force read-write token
+    --expires    Set expiry date (YYYY-MM-DD) on op item create/edit
+    --help, -h   Show this help
+    --version    Show version
+
+TOKEN SELECTION:
+    By default, opchain selects the token automatically:
+    - Read token for: op item get, op vault list, non-op commands
+    - Write token for: op item create/edit/delete/share,
+      op vault/document/group create/edit/delete
 
 EXAMPLES:
-    opchain op read "op://vault/item/field"
-    opchain op run -- node server.js
+    opchain op vault list
+    opchain op item create --vault Dev --title "api-key"
+    opchain op item create --vault Dev --title "api-key" --expires 2026-06-15
+    opchain --read op vault list
+    opchain --write op vault list
     opchain varlock run -- ./start.sh
-    opchain printenv | grep OP_SERVICE_ACCOUNT_TOKEN
+    opchain secrets validate
+    opchain expires
+    opchain expires add op://Dev/api-key
 
-SETUP:
-    # Store your 1Password service account token in Keychain:
-    security add-generic-password -a opchain -s OP_SERVICE_ACCOUNT_TOKEN -w
+CONFIG:
+    File: ~/.config/opchain/config
 
-ENVIRONMENT:
-    OPCHAIN_KEYCHAIN_SERVICE  Keychain account name (default: opchain)
+    projects_dir=~/dev            Directory for secrets validate
+    read_account=opchain-read     Keychain account for read token
+    write_account=opchain-write   Keychain account for write token
+    expires_threshold=14          Days before expiry to warn
 
-REQUIREMENTS:
-    - macOS Keychain with OP_SERVICE_ACCOUNT_TOKEN stored
-    - Keychain item access set to "Allow all applications" (avoids biometric prompts)
+    Env vars (override config): OPCHAIN_PROJECTS_DIR,
+    OPCHAIN_READ_ACCOUNT, OPCHAIN_WRITE_ACCOUNT,
+    OPCHAIN_EXPIRES_THRESHOLD
 
 EOF
     exit 0
 }
 
-[ "$1" = "-h" ] || [ "$1" = "--help" ] && show_help
-[ $# -eq 0 ] && { echo "Usage: opchain <command> [args...]" >&2; exit 1; }
-
-# Fetch token from Keychain
-TOKEN=$(security find-generic-password -a "$KEYCHAIN_SERVICE" -s "$SECRET_NAME" -w 2>/dev/null) || {
-    echo "Error: $SECRET_NAME not found in Keychain" >&2
-    echo "" >&2
-    echo "Add it with:" >&2
-    echo "  security add-generic-password -a $KEYCHAIN_SERVICE -s OP_SERVICE_ACCOUNT_TOKEN -w" >&2
-    exit 1
+show_version() {
+    echo "opchain $VERSION"
+    exit 0
 }
 
-# Export and run command
-export OP_SERVICE_ACCOUNT_TOKEN="$TOKEN"
-exec "$@"
+# --- Main ---
+
+main() {
+    [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]] && show_help
+    [[ "${1:-}" == "--version" ]] && show_version
+
+    # Subcommands
+    case "${1:-}" in
+        secrets)
+            shift
+            handle_secrets "$@"
+            exit 0
+            ;;
+        expires)
+            shift
+            handle_expires "$@"
+            exit 0
+            ;;
+        setup)
+            setup_interactive
+            exit 0
+            ;;
+    esac
+
+    # No args → usage error
+    [[ $# -eq 0 ]] && { echo "Usage: opchain [--read|--write] <command> [args...]" >&2; exit 1; }
+
+    # Parse --read / --write flag
+    local mode="auto"
+    case "$1" in
+        --read)  mode="read";  shift ;;
+        --write) mode="write"; shift ;;
+        --*)
+            echo "Unknown flag: $1" >&2
+            echo "Run 'opchain --help' for usage." >&2
+            exit 1
+            ;;
+    esac
+
+    [[ $# -eq 0 ]] && { echo "Error: no command provided after flag" >&2; exit 1; }
+
+    load_config
+
+    local token
+    token=$(resolve_token "$mode" "$@")
+    export OP_SERVICE_ACCOUNT_TOKEN="$token"
+
+    # Intercept --expires on op item create/edit
+    if [[ "${1:-}" == "op" && "${2:-}" == "item" ]] && \
+       [[ "${3:-}" == "create" || "${3:-}" == "edit" ]]; then
+        local all_args=("$@")
+        local expires_date="" has_expires=0
+        local new_args=()
+        local skip_next=0
+        for ((i = 0; i < ${#all_args[@]}; i++)); do
+            if [[ $skip_next -eq 1 ]]; then
+                skip_next=0
+                continue
+            fi
+            if [[ "${all_args[$i]}" == "--expires" ]]; then
+                has_expires=1
+                local next=$((i + 1))
+                if [[ $next -ge ${#all_args[@]} ]]; then
+                    echo "Error: --expires requires a YYYY-MM-DD date" >&2
+                    exit 1
+                fi
+                expires_date="${all_args[$next]}"
+                if ! validate_date "$expires_date"; then
+                    echo "Error: invalid date '$expires_date' (expected YYYY-MM-DD)" >&2
+                    exit 1
+                fi
+                skip_next=1
+            else
+                new_args+=("${all_args[$i]}")
+            fi
+        done
+
+        if [[ $has_expires -eq 1 ]]; then
+            local action="${new_args[2]}"
+
+            # For op item create without --category, default to API Credential
+            if [[ "$action" == "create" ]]; then
+                local has_category=0
+                for a in "${new_args[@]}"; do
+                    [[ "$a" == "--category" ]] && has_category=1
+                done
+                if [[ $has_category -eq 0 ]]; then
+                    new_args+=("--category" "API Credential")
+                fi
+            fi
+
+            # Append the expires field
+            new_args+=("expires[date]=$expires_date")
+
+            # Execute (not exec, so we can post-process)
+            "${new_args[@]}"
+            local exit_code=$?
+
+            if [[ $exit_code -eq 0 ]]; then
+                # Extract --vault and --title/item-name for tracking
+                local vault="" title=""
+                for ((j = 0; j < ${#new_args[@]}; j++)); do
+                    case "${new_args[$j]}" in
+                        --vault) vault="${new_args[$((j + 1))]}" ;;
+                        --title) title="${new_args[$((j + 1))]}" ;;
+                    esac
+                done
+
+                # For edit, the item name is the positional arg after "op item edit"
+                if [[ "$action" == "edit" && -z "$title" ]]; then
+                    for ((k = 3; k < ${#new_args[@]}; k++)); do
+                        case "${new_args[$k]}" in
+                            --*)  k=$((k + 1)); continue ;;
+                            *=*)  continue ;;
+                            *)    title="${new_args[$k]}"; break ;;
+                        esac
+                    done
+                fi
+
+                if [[ -n "$vault" && -n "$title" ]]; then
+                    add_expires_item "op://$vault/$title"
+                fi
+            fi
+
+            exit $exit_code
+        fi
+    fi
+
+    exec "$@"
+}
+
+main "$@"
