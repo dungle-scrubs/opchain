@@ -17,6 +17,16 @@ DEFAULT_READ_ACCOUNT="opchain-read"
 DEFAULT_WRITE_ACCOUNT="opchain-write"
 EXPIRES_FILE="$CONFIG_DIR/expires"
 DEFAULT_EXPIRES_THRESHOLD=14
+DEFAULT_LLM_ACCOUNT="opchain-llm"
+DEFAULT_LLM_MODEL="anthropic/claude-3.5-haiku"
+OP_CATEGORIES=(
+    "Login" "Secure Note" "Credit Card" "Identity" "Password"
+    "Document" "API Credential" "Bank Account" "Crypto Wallet"
+    "Database" "Driver License" "Email Account" "Medical Record"
+    "Membership" "Outdoor License" "Passport" "Reward Program"
+    "SSH Key" "Server" "Social Security Number" "Software License"
+    "Wireless Router"
+)
 
 # --- Config ---
 
@@ -25,6 +35,8 @@ load_config() {
     local read_account="$DEFAULT_READ_ACCOUNT"
     local write_account="$DEFAULT_WRITE_ACCOUNT"
     local expires_threshold="$DEFAULT_EXPIRES_THRESHOLD"
+    local llm_account="$DEFAULT_LLM_ACCOUNT"
+    local llm_model="$DEFAULT_LLM_MODEL"
 
     # Config file overrides defaults
     if [[ -f "$CONFIG_FILE" ]]; then
@@ -38,6 +50,8 @@ load_config() {
                 read_account)      read_account="$value" ;;
                 write_account)     write_account="$value" ;;
                 expires_threshold) expires_threshold="$value" ;;
+                llm_account)       llm_account="$value" ;;
+                llm_model)         llm_model="$value" ;;
             esac
         done < "$CONFIG_FILE"
     fi
@@ -47,6 +61,8 @@ load_config() {
     READ_ACCOUNT="${OPCHAIN_READ_ACCOUNT:-$read_account}"
     WRITE_ACCOUNT="${OPCHAIN_WRITE_ACCOUNT:-$write_account}"
     EXPIRES_THRESHOLD="${OPCHAIN_EXPIRES_THRESHOLD:-$expires_threshold}"
+    LLM_ACCOUNT="${OPCHAIN_LLM_ACCOUNT:-$llm_account}"
+    LLM_MODEL="${OPCHAIN_LLM_MODEL:-$llm_model}"
 
     # Expand tilde
     PROJECTS_DIR="${PROJECTS_DIR/#\~/$HOME}"
@@ -403,6 +419,463 @@ check_expires_warnings() {
     fi
 }
 
+# --- Create ---
+
+require_jq() {
+    command -v jq > /dev/null 2>&1 || {
+        echo "Error: jq is required for 'opchain create'." >&2
+        echo "Install it with: brew install jq" >&2
+        exit 1
+    }
+}
+
+fetch_llm_key() {
+    security find-generic-password -a "$LLM_ACCOUNT" -s "OPENROUTER_API_KEY" -w 2>/dev/null || true
+}
+
+select_from_list() {
+    local prompt="$1"
+    shift
+    local items=("$@")
+    local count=${#items[@]}
+
+    echo "$prompt" >&2
+    local i
+    for i in $(seq 0 $((count - 1))); do
+        printf "  %d) %s\n" "$((i + 1))" "${items[$i]}" >&2
+    done
+    local choice
+    while true; do
+        read -rp "Selection [1-$count]: " choice
+        if [[ "$choice" =~ ^[0-9]+$ ]] && [[ "$choice" -ge 1 ]] && [[ "$choice" -le "$count" ]]; then
+            echo "${items[$((choice - 1))]}"
+            return 0
+        fi
+        echo "  Invalid selection." >&2
+    done
+}
+
+prompt_field_value() {
+    local label="$1"
+    local field_type="$2"
+    local hint="${3:-}"
+    local display="$label"
+    [[ -n "$hint" ]] && display="$label ($hint)"
+
+    if [[ "$field_type" == "concealed" ]]; then
+        local val
+        read -rsp "  $display: " val
+        echo "" >&2
+        echo "$val"
+    else
+        local val
+        read -rp "  $display: " val
+        echo "$val"
+    fi
+}
+
+llm_suggest() {
+    local title="$1"
+    local vault_names="$2"
+    local api_key="$3"
+
+    local categories_csv=""
+    local cat
+    for cat in "${OP_CATEGORIES[@]}"; do
+        if [[ -n "$categories_csv" ]]; then
+            categories_csv="$categories_csv, $cat"
+        else
+            categories_csv="$cat"
+        fi
+    done
+
+    local system_prompt="You are a 1Password item creation assistant. Given an item title, suggest the best vault, category, and fields. Respond with ONLY valid JSON, no markdown fences.
+
+Available vaults: $vault_names
+Available categories: $categories_csv
+
+Respond with this exact JSON structure:
+{
+  \"vault\": \"vault name\",
+  \"category\": \"category name\",
+  \"note\": \"optional brief note about this type of item\",
+  \"fields\": [
+    {\"name\": \"field name\", \"type\": \"concealed|text|url|email|date\", \"hint\": \"brief description\"}
+  ]
+}
+
+Rules:
+- vault must be one of the available vaults
+- category must be one of the available categories
+- field types: concealed (secrets/passwords/keys), text (plain text), url (URLs), email (emails), date (dates)
+- suggest 1-5 relevant fields
+- keep hints under 30 characters"
+
+    local payload
+    payload=$(jq -n \
+        --arg model "$LLM_MODEL" \
+        --arg system "$system_prompt" \
+        --arg user "Create item: $title" \
+        '{
+            model: $model,
+            temperature: 0.1,
+            max_tokens: 512,
+            messages: [
+                {role: "system", content: $system},
+                {role: "user", content: $user}
+            ]
+        }')
+
+    curl -s --max-time 15 \
+        -H "Authorization: Bearer $api_key" \
+        -H "Content-Type: application/json" \
+        -d "$payload" \
+        "https://openrouter.ai/api/v1/chat/completions" 2>/dev/null || true
+}
+
+parse_llm_response() {
+    local raw="$1"
+    [[ -z "$raw" ]] && return 1
+
+    # Extract content from OpenRouter response
+    local content
+    content=$(echo "$raw" | jq -r '.choices[0].message.content // empty' 2>/dev/null) || return 1
+    [[ -z "$content" ]] && return 1
+
+    # Strip markdown fences if present
+    content=$(echo "$content" | grep -v '^\x60\x60\x60' | sed '/^$/d')
+
+    # Validate JSON
+    echo "$content" | jq empty 2>/dev/null || return 1
+
+    # Validate category against allowed list
+    local suggested_cat
+    suggested_cat=$(echo "$content" | jq -r '.category // empty' 2>/dev/null) || return 1
+    local valid=0
+    local cat
+    for cat in "${OP_CATEGORIES[@]}"; do
+        if [[ "$cat" == "$suggested_cat" ]]; then
+            valid=1
+            break
+        fi
+    done
+    if [[ $valid -eq 0 ]]; then
+        return 1
+    fi
+
+    echo "$content"
+}
+
+handle_create() {
+    local title=""
+    local opt_vault=""
+    local opt_category=""
+    local opt_expires=""
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --vault)
+                [[ $# -lt 2 ]] && { echo "Error: --vault requires a value" >&2; exit 1; }
+                opt_vault="$2"; shift 2 ;;
+            --category)
+                [[ $# -lt 2 ]] && { echo "Error: --category requires a value" >&2; exit 1; }
+                opt_category="$2"; shift 2 ;;
+            --expires)
+                [[ $# -lt 2 ]] && { echo "Error: --expires requires a YYYY-MM-DD date" >&2; exit 1; }
+                opt_expires="$2"; shift 2 ;;
+            --*)
+                echo "Error: unknown option $1" >&2
+                echo "Usage: opchain create <title> [--vault name] [--category name] [--expires YYYY-MM-DD]" >&2
+                exit 1 ;;
+            *)
+                if [[ -z "$title" ]]; then
+                    title="$1"; shift
+                else
+                    echo "Error: unexpected argument '$1'" >&2; exit 1
+                fi ;;
+        esac
+    done
+
+    if [[ -z "$title" ]]; then
+        echo "Usage: opchain create <title> [--vault name] [--category name] [--expires YYYY-MM-DD]" >&2
+        exit 1
+    fi
+
+    if [[ -n "$opt_expires" ]] && ! validate_date "$opt_expires"; then
+        echo "Error: invalid date '$opt_expires' (expected YYYY-MM-DD)" >&2
+        exit 1
+    fi
+
+    require_jq
+    load_config
+
+    # Fetch vault list
+    local token
+    token=$(fetch_token "$READ_ACCOUNT")
+    export OP_SERVICE_ACCOUNT_TOKEN="$token"
+
+    local vaults_json
+    vaults_json=$(op vault list --format=json 2>&1) || {
+        echo "Error: failed to list vaults" >&2
+        echo "$vaults_json" >&2
+        exit 1
+    }
+
+    local vault_names=()
+    while IFS= read -r name; do
+        vault_names+=("$name")
+    done < <(echo "$vaults_json" | jq -r '.[].name' 2>/dev/null)
+
+    if [[ ${#vault_names[@]} -eq 0 ]]; then
+        echo "Error: no vaults found" >&2
+        exit 1
+    fi
+
+    local vault_names_str=""
+    local v
+    for v in "${vault_names[@]}"; do
+        if [[ -n "$vault_names_str" ]]; then
+            vault_names_str="$vault_names_str, $v"
+        else
+            vault_names_str="$v"
+        fi
+    done
+
+    # Try LLM suggestion if vault or category not specified
+    local llm_json=""
+    local llm_vault="" llm_category="" llm_note=""
+    if [[ -z "$opt_vault" || -z "$opt_category" ]]; then
+        local api_key
+        api_key=$(fetch_llm_key)
+        if [[ -n "$api_key" ]]; then
+            echo "Analyzing \"$title\"..."
+            local raw_response
+            raw_response=$(llm_suggest "$title" "$vault_names_str" "$api_key")
+            if llm_json=$(parse_llm_response "$raw_response"); then
+                llm_vault=$(echo "$llm_json" | jq -r '.vault // empty')
+                llm_category=$(echo "$llm_json" | jq -r '.category // empty')
+                llm_note=$(echo "$llm_json" | jq -r '.note // empty')
+            else
+                echo "LLM unavailable, using manual selection." >&2
+                llm_json=""
+            fi
+        fi
+    fi
+
+    # Resolve vault
+    local vault="$opt_vault"
+    if [[ -z "$vault" ]]; then
+        if [[ -n "$llm_vault" ]]; then
+            read -rp "Vault [$llm_vault]: " vault
+            vault="${vault:-$llm_vault}"
+        else
+            vault=$(select_from_list "Select vault:" "${vault_names[@]}")
+        fi
+    fi
+
+    # Resolve category
+    local category="$opt_category"
+    if [[ -z "$category" ]]; then
+        if [[ -n "$llm_category" ]]; then
+            read -rp "Category [$llm_category]: " category
+            category="${category:-$llm_category}"
+        else
+            category=$(select_from_list "Select category:" "${OP_CATEGORIES[@]}")
+        fi
+    fi
+
+    # Display LLM note if available
+    if [[ -n "$llm_note" ]]; then
+        echo "Note: $llm_note"
+    fi
+
+    # Collect fields
+    local field_names=()
+    local field_types=()
+    local field_hints=()
+    local field_values=()
+
+    if [[ -n "$llm_json" ]]; then
+        # Parse LLM-suggested fields
+        local field_count
+        field_count=$(echo "$llm_json" | jq '.fields | length')
+        if [[ "$field_count" -gt 0 ]]; then
+            echo ""
+            echo "Suggested fields:"
+            local idx
+            for idx in $(seq 0 $((field_count - 1))); do
+                local fname ftype fhint
+                fname=$(echo "$llm_json" | jq -r ".fields[$idx].name")
+                ftype=$(echo "$llm_json" | jq -r ".fields[$idx].type")
+                fhint=$(echo "$llm_json" | jq -r ".fields[$idx].hint // empty")
+                echo "  - $fname ($ftype)${fhint:+ -- $fhint}"
+                field_names+=("$fname")
+                field_types+=("$ftype")
+                field_hints+=("$fhint")
+            done
+
+            echo ""
+            read -rp "Use these fields? [Y/n/edit] " confirm
+            confirm=$(echo "${confirm:-Y}" | tr '[:upper:]' '[:lower:]')
+
+            case "$confirm" in
+                n|no)
+                    field_names=()
+                    field_types=()
+                    field_hints=()
+                    echo "Enter fields manually (empty name to finish):"
+                    while true; do
+                        local fname
+                        read -rp "  Field name: " fname
+                        [[ -z "$fname" ]] && break
+                        local ftype
+                        read -rp "  Field type (text/concealed/url/email/date) [text]: " ftype
+                        ftype="${ftype:-text}"
+                        field_names+=("$fname")
+                        field_types+=("$ftype")
+                        field_hints+=("")
+                    done
+                    ;;
+                e|edit)
+                    echo "Edit fields (Enter to keep, 'x' to remove, or type new name):"
+                    local new_names=() new_types=() new_hints=()
+                    local i
+                    for i in $(seq 0 $((${#field_names[@]} - 1))); do
+                        local fname="${field_names[$i]}"
+                        local ftype="${field_types[$i]}"
+                        local fhint="${field_hints[$i]}"
+                        local new_name
+                        read -rp "  $fname ($ftype) [keep/x/new name]: " new_name
+                        if [[ "$new_name" == "x" ]]; then
+                            continue
+                        fi
+                        new_name="${new_name:-$fname}"
+                        new_names+=("$new_name")
+                        new_types+=("$ftype")
+                        new_hints+=("$fhint")
+                    done
+                    echo "Add more fields (empty name to finish):"
+                    while true; do
+                        local fname
+                        read -rp "  Field name: " fname
+                        [[ -z "$fname" ]] && break
+                        local ftype
+                        read -rp "  Field type (text/concealed/url/email/date) [text]: " ftype
+                        ftype="${ftype:-text}"
+                        new_names+=("$fname")
+                        new_types+=("$ftype")
+                        new_hints+=("")
+                    done
+                    field_names=("${new_names[@]}")
+                    field_types=("${new_types[@]}")
+                    field_hints=("${new_hints[@]}")
+                    ;;
+            esac
+        fi
+    else
+        # Manual field entry
+        echo "Enter fields (empty name to finish):"
+        while true; do
+            local fname
+            read -rp "  Field name: " fname
+            [[ -z "$fname" ]] && break
+            local ftype
+            read -rp "  Field type (text/concealed/url/email/date) [text]: " ftype
+            ftype="${ftype:-text}"
+            field_names+=("$fname")
+            field_types+=("$ftype")
+            field_hints+=("")
+        done
+    fi
+
+    # Prompt for field values
+    if [[ ${#field_names[@]} -gt 0 ]]; then
+        echo ""
+        echo "Enter field values (leave blank to skip):"
+        local i
+        for i in $(seq 0 $((${#field_names[@]} - 1))); do
+            local val
+            val=$(prompt_field_value "${field_names[$i]}" "${field_types[$i]}" "${field_hints[$i]}")
+            field_values+=("$val")
+        done
+    fi
+
+    # Preview
+    echo ""
+    echo "==> Creating item"
+    echo "  Title:    $title"
+    echo "  Vault:    $vault"
+    echo "  Category: $category"
+    local populated=0
+    local i
+    for i in $(seq 0 $((${#field_names[@]} - 1))); do
+        [[ -n "${field_values[$i]:-}" ]] && populated=$((populated + 1))
+    done
+    echo "  Fields:   $populated"
+    for i in $(seq 0 $((${#field_names[@]} - 1))); do
+        local val="${field_values[$i]:-}"
+        [[ -z "$val" ]] && continue
+        local display_val="$val"
+        if [[ "${field_types[$i]}" == "concealed" ]]; then
+            display_val="****"
+        fi
+        echo "    - ${field_names[$i]} (${field_types[$i]}): $display_val"
+    done
+    if [[ -n "$opt_expires" ]]; then
+        echo "  Expires:  $opt_expires"
+    fi
+
+    echo ""
+    read -rp "Confirm? [Y/n] " confirm
+    confirm=$(echo "${confirm:-Y}" | tr '[:upper:]' '[:lower:]')
+    if [[ "$confirm" == "n" || "$confirm" == "no" ]]; then
+        echo "Cancelled."
+        exit 0
+    fi
+
+    # Build op item create command
+    local write_token
+    write_token=$(fetch_token "$WRITE_ACCOUNT")
+    export OP_SERVICE_ACCOUNT_TOKEN="$write_token"
+
+    local op_args=("op" "item" "create" "--vault" "$vault" "--category" "$category" "--title" "$title")
+
+    # Add field arguments
+    local i
+    for i in $(seq 0 $((${#field_names[@]} - 1))); do
+        local val="${field_values[$i]:-}"
+        [[ -z "$val" ]] && continue
+        local ftype="${field_types[$i]}"
+        # Normalize unknown types to text
+        case "$ftype" in
+            concealed|text|url|email|date) ;;
+            *) ftype="text" ;;
+        esac
+        op_args+=("${field_names[$i]}[$ftype]=$val")
+    done
+
+    # Add expires field if specified
+    if [[ -n "$opt_expires" ]]; then
+        op_args+=("expires[date]=$opt_expires")
+    fi
+
+    # Execute
+    "${op_args[@]}"
+    local exit_code=$?
+
+    if [[ $exit_code -eq 0 ]]; then
+        echo "Item created successfully."
+        # Auto-track for expiry if --expires was used
+        if [[ -n "$opt_expires" ]]; then
+            add_expires_item "op://$vault/$title"
+        fi
+    else
+        echo "Error: op item create failed (exit code $exit_code)" >&2
+        exit $exit_code
+    fi
+}
+
 # --- Setup ---
 
 setup_interactive() {
@@ -446,6 +919,45 @@ setup_interactive() {
         echo ""
     done
 
+    echo "--- LLM API key (optional, account: $LLM_ACCOUNT) ---"
+    echo "  OpenRouter API key for 'opchain create' suggestions."
+    echo "  Get one at: https://openrouter.ai/keys"
+    read -rp "  Configure LLM? [y/N] " configure_llm
+    if [[ "$configure_llm" == [yY] ]]; then
+        if security find-generic-password -a "$LLM_ACCOUNT" -s "OPENROUTER_API_KEY" > /dev/null 2>&1; then
+            echo "  Existing entry found."
+            read -rp "  Overwrite? [y/N] " confirm
+            if [[ "$confirm" != [yY] ]]; then
+                echo "  Skipped."
+                echo ""
+            else
+                security delete-generic-password -a "$LLM_ACCOUNT" -s "OPENROUTER_API_KEY" > /dev/null 2>&1 || true
+                read -rsp "  Paste OpenRouter API key: " llm_key
+                echo ""
+                if [[ -n "$llm_key" ]]; then
+                    security add-generic-password -a "$LLM_ACCOUNT" -s "OPENROUTER_API_KEY" -w "$llm_key"
+                    echo "  Stored."
+                else
+                    echo "  Empty key, skipped."
+                fi
+                echo ""
+            fi
+        else
+            read -rsp "  Paste OpenRouter API key: " llm_key
+            echo ""
+            if [[ -n "$llm_key" ]]; then
+                security add-generic-password -a "$LLM_ACCOUNT" -s "OPENROUTER_API_KEY" -w "$llm_key"
+                echo "  Stored."
+            else
+                echo "  Empty key, skipped."
+            fi
+            echo ""
+        fi
+    else
+        echo "  Skipped."
+        echo ""
+    fi
+
     echo "Done. Tokens stored in login keychain."
     echo "Set keychain items to 'Allow all applications' to avoid biometric prompts."
 }
@@ -458,12 +970,14 @@ opchain $VERSION — Dual-token 1Password wrapper with secrets management
 
 USAGE:
     opchain [--read|--write] <command> [args...]
+    opchain create <title> [--vault name] [--category name] [--expires YYYY-MM-DD]
     opchain secrets <list|check|validate> [path]
     opchain expires [list|add|remove] [ref]
     opchain setup
     opchain --help | --version
 
 COMMANDS:
+    create <title>           Create a 1Password item with LLM-assisted suggestions
     secrets list [path]      List op:// references in .env.op files
     secrets check [path]     Resolve each op:// reference, report OK/FAIL
     secrets validate         Check all .env.op files under projects dir
@@ -489,6 +1003,9 @@ EXAMPLES:
     opchain op vault list
     opchain op item create --vault Dev --title "api-key"
     opchain op item create --vault Dev --title "api-key" --expires 2026-06-15
+    opchain create "Stripe API Key"
+    opchain create "SSH Key" --vault Dev --category "SSH Key"
+    opchain create "Token" --expires 2026-06-15
     opchain --read op vault list
     opchain --write op vault list
     opchain varlock run -- ./start.sh
@@ -503,10 +1020,16 @@ CONFIG:
     read_account=opchain-read     Keychain account for read token
     write_account=opchain-write   Keychain account for write token
     expires_threshold=14          Days before expiry to warn
+    llm_account=opchain-llm       Keychain account for OpenRouter API key
+    llm_model=anthropic/claude-3.5-haiku  LLM model for create suggestions
 
     Env vars (override config): OPCHAIN_PROJECTS_DIR,
     OPCHAIN_READ_ACCOUNT, OPCHAIN_WRITE_ACCOUNT,
-    OPCHAIN_EXPIRES_THRESHOLD
+    OPCHAIN_EXPIRES_THRESHOLD, OPCHAIN_LLM_ACCOUNT,
+    OPCHAIN_LLM_MODEL
+
+    DEPENDENCIES:
+    - jq (required for 'opchain create'): brew install jq
 
 EOF
     exit 0
@@ -525,6 +1048,11 @@ main() {
 
     # Subcommands
     case "${1:-}" in
+        create)
+            shift
+            handle_create "$@"
+            exit 0
+            ;;
         secrets)
             shift
             handle_secrets "$@"
