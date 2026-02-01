@@ -9,6 +9,7 @@ Dual-token 1Password wrapper with automatic least-privilege token selection and 
 
 - macOS (uses Keychain via `security` command)
 - Bash
+- [jq](https://jqlang.github.io/jq/) (required for `opchain create`): `brew install jq`
 
 ## Installation
 
@@ -35,6 +36,8 @@ opchain setup
 ```
 
 This prompts for a **read-only** and **read-write** 1Password service account token and stores them as separate Keychain entries.
+
+Setup also offers to configure an **OpenRouter API key** for LLM-assisted item creation (`opchain create`). This is optional — without it, `create` falls back to manual selection prompts. Get a key at [openrouter.ai/keys](https://openrouter.ai/keys).
 
 Set each keychain item to "Allow all applications" access to avoid biometric prompts during automation.
 
@@ -75,6 +78,28 @@ Works with `op item edit` too:
 ```bash
 opchain op item edit "api-key" --vault Dev --expires 2026-12-31
 ```
+
+### LLM-assisted item creation
+
+Create 1Password items interactively with optional LLM suggestions for vault, category, and fields:
+
+```bash
+# LLM suggests vault, category, and fields based on the title
+opchain create "Stripe API Key"
+
+# Skip LLM, specify vault and category directly
+opchain create "SSH Key" --vault Dev --category "SSH Key"
+
+# Auto-track expiry on creation
+opchain create "Token" --expires 2026-06-15
+```
+
+When an OpenRouter API key is configured (via `opchain setup`), the LLM analyzes the item title and suggests:
+- Which vault to store it in
+- The appropriate category (from 1Password's 22 built-in types)
+- Relevant fields with appropriate types (concealed for secrets, url for endpoints, etc.)
+
+The LLM only sees metadata (title, vault names, category list) — **never secret values**. Without an LLM key configured, opchain falls back to numbered selection prompts.
 
 ### Token expiry tracking
 
@@ -177,6 +202,8 @@ Environment variables override the config file, which overrides defaults.
 | `OPCHAIN_READ_ACCOUNT` | Keychain account for read token | `opchain-read` |
 | `OPCHAIN_WRITE_ACCOUNT` | Keychain account for write token | `opchain-write` |
 | `OPCHAIN_EXPIRES_THRESHOLD` | Days before expiry to warn | `14` |
+| `OPCHAIN_LLM_ACCOUNT` | Keychain account for OpenRouter API key | `opchain-llm` |
+| `OPCHAIN_LLM_MODEL` | LLM model for create suggestions | `anthropic/claude-3.5-haiku` |
 
 ## Uninstall
 

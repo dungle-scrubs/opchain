@@ -95,11 +95,32 @@ jobs:
 
       - name: Test expires add validates op:// prefix
         run: |
-          ! ./opchain expires add "not-a-ref" 2>&1 | grep -q "must start with op://"
+          output=$(./opchain expires add "not-a-ref" 2>&1 || true)
+          echo "$output" | grep -q "must start with op://"
 
       - name: Test expires subcommand with invalid action
         run: |
           ! ./opchain expires bogus
+
+      - name: Test create with no title exits with error
+        run: |
+          output=$(./opchain create 2>&1 || true)
+          echo "$output" | grep -q "Usage:"
+
+      - name: Test create with invalid expires date
+        run: |
+          output=$(./opchain create "test" --expires "bad-date" 2>&1 || true)
+          echo "$output" | grep -q "invalid date"
+
+      - name: Test create with missing expires value
+        run: |
+          output=$(./opchain create "test" --expires 2>&1 || true)
+          echo "$output" | grep -q "requires a YYYY-MM-DD date"
+
+      - name: Test create with unknown option
+        run: |
+          output=$(./opchain create "test" --bogus 2>&1 || true)
+          echo "$output" | grep -q "unknown option"
 
       - name: Test install/uninstall
         run: |

@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `opchain create <title>` command — LLM-assisted 1Password item creation with interactive prompts
+- OpenRouter LLM integration for vault, category, and field suggestions (optional, never sends secret values)
+- `opchain setup` now offers optional OpenRouter API key configuration
+- `llm_account` and `llm_model` config keys with `OPCHAIN_LLM_ACCOUNT` / `OPCHAIN_LLM_MODEL` env var overrides
+- `jq` dependency for `opchain create` (with install instructions on missing)
 - `opchain expires` command — track items with expiration dates and check status (OK/EXPIRING/EXPIRED)
 - `opchain expires add <ref>` — manually track an `op://` item for expiry monitoring
 - `opchain expires remove <ref>` — stop tracking an item
