@@ -80,6 +80,13 @@ load_config() {
     LLM_ACCOUNT="${OPCHAIN_LLM_ACCOUNT:-$llm_account}"
     LLM_MODEL="${OPCHAIN_LLM_MODEL:-$llm_model}"
 
+    # Validate expires_threshold is a positive integer (bash 3.2 crashes on
+    # non-numeric values in [[ -le ]] comparisons under set -u)
+    if ! [[ "$EXPIRES_THRESHOLD" =~ ^[0-9]+$ ]]; then
+        echo "Warning: invalid expires_threshold '$EXPIRES_THRESHOLD', using default ($DEFAULT_EXPIRES_THRESHOLD)" >&2
+        EXPIRES_THRESHOLD="$DEFAULT_EXPIRES_THRESHOLD"
+    fi
+
     # Expand tilde
     PROJECTS_DIR="${PROJECTS_DIR/#\~/$HOME}"
 }

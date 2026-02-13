@@ -429,20 +429,25 @@ handle_create() {
     echo "  Vault:    $vault"
     echo "  Category: $category"
     local populated=0
-    local i
-    for i in $(seq 0 $((${#field_names[@]} - 1))); do
-        [[ -n "${field_values[$i]:-}" ]] && populated=$((populated + 1))
-    done
+    if [[ ${#field_names[@]} -gt 0 ]]; then
+        local i
+        for i in $(seq 0 $((${#field_names[@]} - 1))); do
+            [[ -n "${field_values[$i]:-}" ]] && populated=$((populated + 1))
+        done
+    fi
     echo "  Fields:   $populated"
-    for i in $(seq 0 $((${#field_names[@]} - 1))); do
-        local val="${field_values[$i]:-}"
-        [[ -z "$val" ]] && continue
-        local display_val="$val"
-        if [[ "${field_types[$i]}" == "concealed" ]]; then
-            display_val="****"
-        fi
-        echo "    - ${field_names[$i]} (${field_types[$i]}): $display_val"
-    done
+    if [[ ${#field_names[@]} -gt 0 ]]; then
+        local i
+        for i in $(seq 0 $((${#field_names[@]} - 1))); do
+            local val="${field_values[$i]:-}"
+            [[ -z "$val" ]] && continue
+            local display_val="$val"
+            if [[ "${field_types[$i]}" == "concealed" ]]; then
+                display_val="****"
+            fi
+            echo "    - ${field_names[$i]} (${field_types[$i]}): $display_val"
+        done
+    fi
     if [[ -n "$opt_expires" ]]; then
         echo "  Expires:  $opt_expires"
     fi
@@ -462,17 +467,19 @@ handle_create() {
 
     local op_args=("op" "item" "create" "--vault" "$vault" "--category" "$category" "--title" "$title")
 
-    local i
-    for i in $(seq 0 $((${#field_names[@]} - 1))); do
-        local val="${field_values[$i]:-}"
-        [[ -z "$val" ]] && continue
-        local ftype="${field_types[$i]}"
-        case "$ftype" in
-            concealed|text|url|email|date) ;;
-            *) ftype="text" ;;
-        esac
-        op_args+=("${field_names[$i]}[$ftype]=$val")
-    done
+    if [[ ${#field_names[@]} -gt 0 ]]; then
+        local i
+        for i in $(seq 0 $((${#field_names[@]} - 1))); do
+            local val="${field_values[$i]:-}"
+            [[ -z "$val" ]] && continue
+            local ftype="${field_types[$i]}"
+            case "$ftype" in
+                concealed|text|url|email|date) ;;
+                *) ftype="text" ;;
+            esac
+            op_args+=("${field_names[$i]}[$ftype]=$val")
+        done
+    fi
 
     if [[ -n "$opt_expires" ]]; then
         op_args+=("expires[date]=$opt_expires")

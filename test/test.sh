@@ -213,6 +213,80 @@ test_expires_file_ops() {
     rm -rf "$tmpdir"
 }
 
+test_expires_threshold_validation() {
+    echo "==> expires_threshold validation"
+    local old_config="$CONFIG_FILE"
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    CONFIG_FILE="$tmpdir/config"
+
+    # Non-numeric threshold falls back to default
+    echo "expires_threshold=banana" > "$CONFIG_FILE"
+    load_config 2>/dev/null
+    assert_eq "non-numeric falls back to default" "$DEFAULT_EXPIRES_THRESHOLD" "$EXPIRES_THRESHOLD"
+
+    # Empty threshold falls back to default
+    echo "expires_threshold=" > "$CONFIG_FILE"
+    load_config 2>/dev/null
+    assert_eq "empty falls back to default" "$DEFAULT_EXPIRES_THRESHOLD" "$EXPIRES_THRESHOLD"
+
+    # Valid threshold kept
+    echo "expires_threshold=7" > "$CONFIG_FILE"
+    load_config 2>/dev/null
+    assert_eq "valid threshold kept" "7" "$EXPIRES_THRESHOLD"
+
+    CONFIG_FILE="$old_config"
+}
+
+test_expires_file_permissions() {
+    echo "==> expires file permissions"
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    local old_config_dir="$CONFIG_DIR"
+    local old_expires="$EXPIRES_FILE"
+
+    CONFIG_DIR="$tmpdir/opchain-perm-test"
+    EXPIRES_FILE="$CONFIG_DIR/expires"
+
+    add_expires_item "op://Dev/test-item"
+
+    local dir_perms
+    dir_perms=$(stat -f '%Lp' "$CONFIG_DIR")
+    assert_eq "config dir is 700" "700" "$dir_perms"
+
+    local file_perms
+    file_perms=$(stat -f '%Lp' "$EXPIRES_FILE")
+    assert_eq "expires file is 600" "600" "$file_perms"
+
+    CONFIG_DIR="$old_config_dir"
+    EXPIRES_FILE="$old_expires"
+}
+
+test_seq_empty_array_safety() {
+    echo "==> seq empty array safety (bash 3.2)"
+
+    # Simulate the preview loop from create.sh with empty arrays
+    local field_names=()
+    local populated=0
+
+    # This is the guarded pattern from create.sh lines 433-447
+    if [[ ${#field_names[@]} -gt 0 ]]; then
+        local i
+        for i in $(seq 0 $((${#field_names[@]} - 1))); do
+            populated=$((populated + i * 0 + 1))
+        done
+    fi
+    assert_eq "no iterations on empty array" "0" "$populated"
+
+    # Verify seq 0 -1 WOULD iterate (proving the guard is needed)
+    local bad_iterations=0
+    local _idx
+    for _idx in $(seq 0 $(( 0 - 1 ))); do
+        bad_iterations=$((_idx * 0 + bad_iterations + 1))
+    done
+    assert_eq "unguarded seq 0 -1 iterates" "2" "$bad_iterations"
+}
+
 test_cli_flags() {
     echo "==> CLI flags"
     local opchain="$SCRIPT_DIR/opchain"
@@ -248,6 +322,9 @@ test_sanitize_title
 test_config_parsing
 test_secrets_list_file
 test_expires_file_ops
+test_expires_threshold_validation
+test_expires_file_permissions
+test_seq_empty_array_safety
 test_cli_flags
 
 echo ""

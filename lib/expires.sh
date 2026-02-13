@@ -33,11 +33,12 @@ load_expires_list() {
 # @param $1 - op:// reference (e.g., op://vault/item)
 add_expires_item() {
     local ref="$1"
-    mkdir -p "$CONFIG_DIR"
+    mkdir -p "$CONFIG_DIR" && chmod 700 "$CONFIG_DIR"
     if [[ -f "$EXPIRES_FILE" ]] && grep -qxF "$ref" "$EXPIRES_FILE"; then
         return 0
     fi
     echo "$ref" >> "$EXPIRES_FILE"
+    chmod 600 "$EXPIRES_FILE"
 }
 
 # Remove an op:// reference from the expires watch file.
@@ -53,9 +54,11 @@ remove_expires_item() {
         echo "Not tracked: $ref" >&2
         return 1
     fi
-    local tmp
-    tmp=$(grep -vxF "$ref" "$EXPIRES_FILE") || true
-    echo "$tmp" > "$EXPIRES_FILE"
+    local tmp_file
+    tmp_file=$(mktemp "${EXPIRES_FILE}.XXXXXX")
+    grep -vxF "$ref" "$EXPIRES_FILE" > "$tmp_file" || true
+    mv "$tmp_file" "$EXPIRES_FILE"
+    chmod 600 "$EXPIRES_FILE"
     echo "Removed: $ref"
 }
 
