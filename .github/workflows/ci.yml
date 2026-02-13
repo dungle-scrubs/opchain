@@ -17,16 +17,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install shellcheck
-        run: sudo apt-get install -y shellcheck
+      - name: Install tools
+        run: |
+          sudo apt-get install -y shellcheck
+          curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | sudo bash -s -- --to /usr/local/bin
 
       - name: Run shellcheck
-        run: make lint
+        run: just lint
 
   test:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install just
+        run: brew install just
 
       - name: Verify scripts are executable
         run: |
@@ -34,93 +39,8 @@ jobs:
           test -x install.sh
           test -x uninstall.sh
 
-      - name: Test --help flag
-        run: ./opchain --help
-
-      - name: Test -h flag
-        run: ./opchain -h
-
-      - name: Test --version flag
-        run: |
-          output=$(./opchain --version)
-          echo "$output"
-          [[ "$output" == opchain\ * ]]
-
-      - name: Test no-args exits with error
-        run: |
-          ! ./opchain
-
-      - name: Test unknown flag exits with error
-        run: |
-          ! ./opchain --bogus
-
-      - name: Test secrets list with no .env.op files
-        run: |
-          tmpdir=$(mktemp -d)
-          ./opchain secrets list "$tmpdir" 2>&1 | grep -q "No .env.op files"
-
-      - name: Test secrets list with .env.op file
-        run: |
-          tmpdir=$(mktemp -d)
-          echo "KEY=op://vault/item/field" > "$tmpdir/.env.op"
-          output=$(./opchain secrets list "$tmpdir")
-          echo "$output"
-          echo "$output" | grep -q "KEY=op://vault/item/field"
-
-      - name: Test secrets subcommand with no action
-        run: |
-          ! ./opchain secrets
-
-      - name: Test expires with no watch file
-        run: |
-          output=$(./opchain expires 2>&1)
-          echo "$output"
-          echo "$output" | grep -q "No items tracked"
-
-      - name: Test expires add
-        run: |
-          ./opchain expires add op://Dev/test-item
-          grep -q "op://Dev/test-item" "${XDG_CONFIG_HOME:-$HOME/.config}/opchain/expires"
-
-      - name: Test expires add duplicate
-        run: |
-          ./opchain expires add op://Dev/test-item
-          count=$(grep -c "op://Dev/test-item" "${XDG_CONFIG_HOME:-$HOME/.config}/opchain/expires")
-          [[ "$count" -eq 1 ]]
-
-      - name: Test expires remove
-        run: |
-          ./opchain expires remove op://Dev/test-item
-          ! grep -q "op://Dev/test-item" "${XDG_CONFIG_HOME:-$HOME/.config}/opchain/expires"
-
-      - name: Test expires add validates op:// prefix
-        run: |
-          output=$(./opchain expires add "not-a-ref" 2>&1 || true)
-          echo "$output" | grep -q "must start with op://"
-
-      - name: Test expires subcommand with invalid action
-        run: |
-          ! ./opchain expires bogus
-
-      - name: Test create with no title exits with error
-        run: |
-          output=$(./opchain create 2>&1 || true)
-          echo "$output" | grep -q "Usage:"
-
-      - name: Test create with invalid expires date
-        run: |
-          output=$(./opchain create "test" --expires "bad-date" 2>&1 || true)
-          echo "$output" | grep -q "invalid date"
-
-      - name: Test create with missing expires value
-        run: |
-          output=$(./opchain create "test" --expires 2>&1 || true)
-          echo "$output" | grep -q "requires a YYYY-MM-DD date"
-
-      - name: Test create with unknown option
-        run: |
-          output=$(./opchain create "test" --bogus 2>&1 || true)
-          echo "$output" | grep -q "unknown option"
+      - name: Run test suite
+        run: just test
 
       - name: Test install/uninstall
         run: |

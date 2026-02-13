@@ -13,13 +13,7 @@ Dual-token 1Password wrapper with automatic least-privilege token selection and 
 
 ## Installation
 
-### Homebrew (recommended)
-
-```bash
-brew install dungle-scrubs/opchain/opchain
-```
-
-### Manual
+### Install
 
 ```bash
 ./install.sh
@@ -95,11 +89,10 @@ opchain create "Token" --expires 2026-06-15
 ```
 
 When an OpenRouter API key is configured (via `opchain setup`), the LLM analyzes the item title and suggests:
-- Which vault to store it in
-- The appropriate category (from 1Password's 22 built-in types)
+- The appropriate category (from 1Password's built-in types)
 - Relevant fields with appropriate types (concealed for secrets, url for endpoints, etc.)
 
-The LLM only sees metadata (title, vault names, category list) — **never secret values**. Without an LLM key configured, opchain falls back to numbered selection prompts.
+The LLM only sees the item title and category list — **never secret values or vault names**. Without an LLM key configured, opchain falls back to numbered selection prompts.
 
 ### Token expiry tracking
 

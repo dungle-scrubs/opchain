@@ -2,19 +2,6 @@
 
 ## Pending
 
-### Create dedicated Homebrew tap repo
-
-Create `dungle-scrubs/homebrew-opchain` on GitHub to follow the standard Homebrew tap naming convention.
-
-**Steps:**
-
-1. Create public repo `homebrew-opchain` at https://github.com/new (no template, no README init)
-2. Push the prepared tap content:
-   ```bash
-   cd /tmp/homebrew-opchain && git push -u origin main
-   ```
-3. Add a `TAP_GITHUB_TOKEN` repo secret to `dungle-scrubs/opchain` — a PAT with `contents: write` scope on the tap repo, used by the release workflow to push formula updates
-
 ### Weekly expiry check via launchd
 
 Create a macOS `launchd` plist that runs `opchain expires` weekly and sends a notification for EXPIRING/EXPIRED items.
