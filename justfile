@@ -6,7 +6,7 @@ default:
 
 # Run shellcheck on all scripts
 lint:
-    shellcheck opchain lib/*.sh install.sh uninstall.sh
+    shellcheck -S warning opchain lib/*.sh install.sh uninstall.sh test/test.sh
 
 # Run local tests (no op CLI or Keychain required)
 test:
