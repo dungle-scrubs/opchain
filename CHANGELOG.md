@@ -7,21 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Modular architecture: split monolith into `lib/` source modules (config, keychain, secrets, expires, create, help)
+- Vault names no longer sent to LLM — only item title and category list
+- `days_until` uses midnight-to-midnight comparison for accurate day counts
+- Config parser uses safe string trimming (replaces fragile `xargs`)
+- 1Password categories fetched dynamically at runtime, hardcoded list as fallback
+- Release workflow uses `softprops/action-gh-release@v2`
+- Replaced Makefile with justfile
+
 ### Added
 
-- `opchain create <title>` command — LLM-assisted 1Password item creation with interactive prompts
-- OpenRouter LLM integration for vault, category, and field suggestions (optional, never sends secret values)
-- `opchain setup` now offers optional OpenRouter API key configuration
-- `llm_account` and `llm_model` config keys with `OPCHAIN_LLM_ACCOUNT` / `OPCHAIN_LLM_MODEL` env var overrides
-- `jq` dependency for `opchain create` (with install instructions on missing)
-- `opchain expires` command — track items with expiration dates and check status (OK/EXPIRING/EXPIRED)
-- `opchain expires add <ref>` — manually track an `op://` item for expiry monitoring
-- `opchain expires remove <ref>` — stop tracking an item
-- `--expires YYYY-MM-DD` flag for `op item create/edit` — sets expiry date field and auto-tracks item
-- Default `--category "API Credential"` when using `--expires` with `op item create` (prevents confusing "Login" type)
-- `expires_threshold` config key and `OPCHAIN_EXPIRES_THRESHOLD` env var (default: 14 days)
-- Expiry warnings after `opchain secrets validate` for EXPIRING/EXPIRED items
-- Watch file at `~/.config/opchain/expires` for tracked item references
+- Local test suite with 55 tests (`just test`)
+- Title sanitization for LLM-assisted create (strips control chars, caps length)
+- `.editorconfig` for consistent formatting
+- Version validation in release workflow
+
+### Fixed
+
+- Bash 3.2 compatibility: safe empty array expansion under `set -u`
+
+### Removed
+
+- Homebrew tap workflow (private project)
 
 ## [0.3.0] - 2026-01-27
 
@@ -38,6 +47,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Config file support (`~/.config/opchain/config`)
 - `OPCHAIN_PROJECTS_DIR`, `OPCHAIN_READ_ACCOUNT`, `OPCHAIN_WRITE_ACCOUNT` env vars
 - Write command classification for `op item/vault/document/group` mutations
+- `opchain create <title>` command — LLM-assisted 1Password item creation with interactive prompts
+- OpenRouter LLM integration for category and field suggestions (optional, never sends secret values)
+- `opchain setup` offers optional OpenRouter API key configuration
+- `llm_account` and `llm_model` config keys with `OPCHAIN_LLM_ACCOUNT` / `OPCHAIN_LLM_MODEL` env var overrides
+- `jq` dependency for `opchain create` (with install instructions on missing)
+- `opchain expires` command — track items with expiration dates and check status (OK/EXPIRING/EXPIRED)
+- `opchain expires add <ref>` — manually track an `op://` item for expiry monitoring
+- `opchain expires remove <ref>` — stop tracking an item
+- `--expires YYYY-MM-DD` flag for `op item create/edit` — sets expiry date field and auto-tracks item
+- Default `--category "API Credential"` when using `--expires` with `op item create` (prevents confusing "Login" type)
+- `expires_threshold` config key and `OPCHAIN_EXPIRES_THRESHOLD` env var (default: 14 days)
+- Expiry warnings after `opchain secrets validate` for EXPIRING/EXPIRED items
+- Watch file at `~/.config/opchain/expires` for tracked item references
 
 ### Changed
 
