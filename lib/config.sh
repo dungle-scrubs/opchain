@@ -2,7 +2,8 @@
 # shellcheck disable=SC2034  # Variables here are used by other sourced modules
 # Config loading, constants, and utility functions
 
-VERSION="0.3.0"
+# x-release-please-version
+VERSION="0.4.0"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/opchain"
 CONFIG_FILE="$CONFIG_DIR/config"
 EXPIRES_FILE="$CONFIG_DIR/expires"
