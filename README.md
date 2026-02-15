@@ -204,6 +204,12 @@ Environment variables override the config file, which overrides defaults.
 ./uninstall.sh
 ```
 
+## Known Limitations
+
+- **macOS only** — uses `security` (Keychain) and BSD `date -j`; no Linux/Windows support
+- **Bash 3.2+** — compatible with macOS default shell, but no Bash 4+ features (associative arrays, etc.)
+- **1Password service accounts** — requires service account tokens, not personal accounts
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
