@@ -13,8 +13,9 @@ logs/
 .env
 .env.local
 
-# Claude Code
+# AI agents
 .claude/
+.tallow/
+.pi/
 CLAUDE.md
-AGENT.md
-logs/
+AGENTS.md

@@ -8,5 +8,5 @@ Brief description of changes.
 
 ## Testing
 
-- [ ] `make lint` passes
+- [ ] `just check` passes
 - [ ] Tested on macOS

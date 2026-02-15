@@ -49,10 +49,21 @@ install.sh        # symlink installer
 uninstall.sh      # symlink remover
 ```
 
+## Commit Messages
+
+This project uses [Conventional Commits](https://www.conventionalcommits.org/) for automated versioning:
+
+| Prefix | Bump | Example |
+|--------|------|---------|
+| `fix:` | patch | `fix: resolve crash on empty input` |
+| `feat:` | minor | `feat: add export command` |
+| `feat!:` | major (minor pre-1.0) | `feat!: change config format` |
+| `docs:`, `chore:`, `ci:`, `test:` | none | `docs: update README` |
+
 ## Release Process
 
-1. Update `VERSION` in `lib/config.sh`
-2. Move `[Unreleased]` to `[X.Y.Z] - YYYY-MM-DD` in `CHANGELOG.md`
-3. Commit: `git commit -am "release: vX.Y.Z"`
-4. Tag: `git tag vX.Y.Z && git push --tags`
-5. GitHub Actions creates the release automatically
+Releases are automated via [release-please](https://github.com/googleapis/release-please):
+
+1. Push to `main` with conventional commits
+2. release-please opens/updates a PR bumping version + changelog
+3. Merge the PR → GitHub Release created automatically
