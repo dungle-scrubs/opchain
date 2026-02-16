@@ -62,6 +62,87 @@ remove_expires_item() {
     echo "Removed: $ref"
 }
 
+# --- Passthrough interception ---
+
+# Intercept --expires flag on `op item create/edit` passthrough commands.
+# Strips --expires, appends the date as an op field, and auto-tracks for expiry.
+# @param $@ - full command args (starting with "op")
+# @returns exit code from op command
+handle_op_expires() {
+    local all_args=("$@")
+    local expires_date=""
+    local new_args=()
+    local skip_next=0
+
+    for ((i = 0; i < ${#all_args[@]}; i++)); do
+        if [[ $skip_next -eq 1 ]]; then
+            skip_next=0
+            continue
+        fi
+        if [[ "${all_args[$i]}" == "--expires" ]]; then
+            local next=$((i + 1))
+            if [[ $next -ge ${#all_args[@]} ]]; then
+                echo "Error: --expires requires a YYYY-MM-DD date" >&2
+                exit 1
+            fi
+            expires_date="${all_args[$next]}"
+            if ! validate_date "$expires_date"; then
+                echo "Error: invalid date '$expires_date' (expected YYYY-MM-DD)" >&2
+                exit 1
+            fi
+            skip_next=1
+        else
+            new_args+=("${all_args[$i]}")
+        fi
+    done
+
+    local action="${new_args[2]}"
+
+    # Default to "API Credential" category for create without --category
+    if [[ "$action" == "create" ]]; then
+        local has_category=0
+        for a in "${new_args[@]}"; do
+            [[ "$a" == "--category" ]] && has_category=1
+        done
+        if [[ $has_category -eq 0 ]]; then
+            new_args+=("--category" "API Credential")
+        fi
+    fi
+
+    new_args+=("expires[date]=$expires_date")
+
+    "${new_args[@]}"
+    local exit_code=$?
+
+    if [[ $exit_code -eq 0 ]]; then
+        # Extract vault and title for expiry tracking
+        local vault="" title=""
+        for ((j = 0; j < ${#new_args[@]}; j++)); do
+            case "${new_args[$j]}" in
+                --vault) vault="${new_args[$((j + 1))]}" ;;
+                --title) title="${new_args[$((j + 1))]}" ;;
+            esac
+        done
+
+        # For edit, the item name is the positional arg after "op item edit"
+        if [[ "$action" == "edit" && -z "$title" ]]; then
+            for ((k = 3; k < ${#new_args[@]}; k++)); do
+                case "${new_args[$k]}" in
+                    --*)  k=$((k + 1)); continue ;;
+                    *=*)  continue ;;
+                    *)    title="${new_args[$k]}"; break ;;
+                esac
+            done
+        fi
+
+        if [[ -n "$vault" && -n "$title" ]]; then
+            add_expires_item "op://$vault/$title"
+        fi
+    fi
+
+    exit $exit_code
+}
+
 # --- Dispatch ---
 
 # Route expires subcommands.
