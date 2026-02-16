@@ -62,6 +62,7 @@ test_write_detection() {
     assert_exit "op vault create → write" 0 is_write_command op vault create
     assert_exit "op document delete → write" 0 is_write_command op document delete
     assert_exit "op group edit → write" 0 is_write_command op group edit
+    assert_exit "op item move → write" 0 is_write_command op item move
     assert_exit "op item get → read" 1 is_write_command op item get
     assert_exit "op item list → read" 1 is_write_command op item list
     assert_exit "op vault list → read" 1 is_write_command op vault list
@@ -308,6 +309,79 @@ test_cli_flags() {
     assert_exit "unknown flag → error" 1 "$opchain" --bogus
 }
 
+test_handle_op_expires() {
+    echo "==> handle_op_expires"
+
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    local old_config_dir="$CONFIG_DIR"
+    local old_expires="$EXPIRES_FILE"
+    CONFIG_DIR="$tmpdir"
+    EXPIRES_FILE="$tmpdir/expires"
+
+    # Mock op: capture args to file
+    op() { printf '%s\n' "$@" > "$tmpdir/captured_args"; return 0; }
+
+    # Test: --expires stripped and converted to field syntax
+    (handle_op_expires op item create --vault Dev --title "test-key" --expires 2026-06-15) 2>/dev/null || true
+    grep -q 'expires\[date\]=2026-06-15' "$tmpdir/captured_args"
+    assert_eq "converts --expires to field" "0" "$?"
+    ! grep -q '^--expires$' "$tmpdir/captured_args"
+    assert_eq "strips --expires flag" "0" "$?"
+
+    # Test: default category on create without --category
+    grep -q '^API Credential$' "$tmpdir/captured_args"
+    assert_eq "defaults to API Credential" "0" "$?"
+
+    # Test: =style vault/title for expiry tracking
+    rm -f "$tmpdir/expires"
+    (handle_op_expires op item create --vault=Prod --title="api-key" --expires 2026-06-15) 2>/dev/null || true
+    [[ -f "$tmpdir/expires" ]] && grep -q 'op://Prod/api-key' "$tmpdir/expires"
+    assert_eq "tracks =style vault/title" "0" "$?"
+
+    # Test: space-style vault/title for expiry tracking
+    rm -f "$tmpdir/expires"
+    (handle_op_expires op item create --vault Dev --title "space-key" --expires 2026-06-15) 2>/dev/null || true
+    [[ -f "$tmpdir/expires" ]] && grep -q 'op://Dev/space-key' "$tmpdir/expires"
+    assert_eq "tracks space-style vault/title" "0" "$?"
+
+    # Test: invalid date rejected
+    local err
+    err=$( (handle_op_expires op item create --vault Dev --title "x" --expires "bad-date") 2>&1 ) || true
+    echo "$err" | grep -q "invalid date"
+    assert_eq "rejects invalid date" "0" "$?"
+
+    # Cleanup
+    unset -f op
+    CONFIG_DIR="$old_config_dir"
+    EXPIRES_FILE="$old_expires"
+    rm -rf "$tmpdir"
+}
+
+test_resolve_token() {
+    echo "==> resolve_token"
+
+    load_config
+
+    # Mock fetch_token to avoid Keychain dependency
+    fetch_token() {
+        case "$1" in
+            "$READ_ACCOUNT")  echo "mock-read-token" ;;
+            "$WRITE_ACCOUNT") echo "mock-write-token" ;;
+        esac
+    }
+
+    assert_eq "explicit read" "mock-read-token" "$(resolve_token read op vault list)"
+    assert_eq "explicit write" "mock-write-token" "$(resolve_token write op item create)"
+    assert_eq "auto read" "mock-read-token" "$(resolve_token auto op vault list)"
+    assert_eq "auto write" "mock-write-token" "$(resolve_token auto op item create)"
+    assert_eq "auto non-op" "mock-read-token" "$(resolve_token auto varlock run)"
+
+    # Restore real fetch_token
+    # shellcheck source=../lib/keychain.sh
+    source "$SCRIPT_DIR/lib/keychain.sh"
+}
+
 # --- Run ---
 
 echo "opchain test suite"
@@ -325,6 +399,8 @@ test_expires_file_ops
 test_expires_threshold_validation
 test_expires_file_permissions
 test_seq_empty_array_safety
+test_handle_op_expires
+test_resolve_token
 test_cli_flags
 
 echo ""
