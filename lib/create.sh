@@ -154,11 +154,22 @@ Rules:
             ]
         }')
 
-    curl -s --max-time 15 \
+    local response http_code
+    response=$(curl -s --max-time 15 -w '\n%{http_code}' \
         -H "Authorization: Bearer $api_key" \
         -H "Content-Type: application/json" \
         -d "$payload" \
-        "https://openrouter.ai/api/v1/chat/completions" 2>/dev/null || true
+        "https://openrouter.ai/api/v1/chat/completions" 2>/dev/null) || {
+        echo "LLM request failed (network error)." >&2
+        return 1
+    }
+    http_code="${response##*$'\n'}"
+    response="${response%$'\n'*}"
+    if [[ "$http_code" != "200" ]]; then
+        echo "LLM request failed (HTTP $http_code)." >&2
+        return 1
+    fi
+    echo "$response"
 }
 
 # Parse and validate the LLM response JSON.
@@ -206,6 +217,7 @@ handle_create() {
     local opt_vault=""
     local opt_category=""
     local opt_expires=""
+    local opt_dry_run=0
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -218,9 +230,11 @@ handle_create() {
             --expires)
                 [[ $# -lt 2 ]] && { echo "Error: --expires requires a YYYY-MM-DD date" >&2; exit 1; }
                 opt_expires="$2"; shift 2 ;;
+            --dry-run)
+                opt_dry_run=1; shift ;;
             --*)
                 echo "Error: unknown option $1" >&2
-                echo "Usage: opchain create <title> [--vault name] [--category name] [--expires YYYY-MM-DD]" >&2
+                echo "Usage: opchain create <title> [--vault name] [--category name] [--expires YYYY-MM-DD] [--dry-run]" >&2
                 exit 1 ;;
             *)
                 if [[ -z "$title" ]]; then
@@ -276,13 +290,17 @@ handle_create() {
         api_key=$(fetch_llm_key)
         if [[ -n "$api_key" ]]; then
             echo "Analyzing \"$title\"..."
-            local raw_response
-            raw_response=$(llm_suggest "$title" "$api_key")
-            if llm_json=$(parse_llm_response "$raw_response"); then
-                llm_category=$(echo "$llm_json" | jq -r '.category // empty')
-                llm_note=$(echo "$llm_json" | jq -r '.note // empty')
+            local raw_response=""
+            if raw_response=$(llm_suggest "$title" "$api_key"); then
+                if llm_json=$(parse_llm_response "$raw_response"); then
+                    llm_category=$(echo "$llm_json" | jq -r '.category // empty')
+                    llm_note=$(echo "$llm_json" | jq -r '.note // empty')
+                else
+                    echo "LLM returned invalid response, using manual selection." >&2
+                    llm_json=""
+                fi
             else
-                echo "LLM unavailable, using manual selection." >&2
+                # Error already reported by llm_suggest
                 llm_json=""
             fi
         fi
@@ -407,8 +425,8 @@ handle_create() {
         done
     fi
 
-    # Prompt for field values
-    if [[ ${#field_names[@]} -gt 0 ]]; then
+    # Prompt for field values (skip in dry-run mode)
+    if [[ ${#field_names[@]} -gt 0 && "$opt_dry_run" -eq 0 ]]; then
         echo ""
         echo "Enter field values (leave blank to skip):"
         local i
@@ -425,28 +443,44 @@ handle_create() {
     echo "  Title:    $title"
     echo "  Vault:    $vault"
     echo "  Category: $category"
-    local populated=0
-    if [[ ${#field_names[@]} -gt 0 ]]; then
-        local i
-        for i in $(seq 0 $((${#field_names[@]} - 1))); do
-            [[ -n "${field_values[$i]:-}" ]] && populated=$((populated + 1))
-        done
-    fi
-    echo "  Fields:   $populated"
-    if [[ ${#field_names[@]} -gt 0 ]]; then
-        local i
-        for i in $(seq 0 $((${#field_names[@]} - 1))); do
-            local val="${field_values[$i]:-}"
-            [[ -z "$val" ]] && continue
-            local display_val="$val"
-            if [[ "${field_types[$i]}" == "concealed" ]]; then
-                display_val="****"
-            fi
-            echo "    - ${field_names[$i]} (${field_types[$i]}): $display_val"
-        done
+    if [[ "$opt_dry_run" -eq 1 ]]; then
+        echo "  Fields:   ${#field_names[@]}"
+        if [[ ${#field_names[@]} -gt 0 ]]; then
+            local i
+            for i in $(seq 0 $((${#field_names[@]} - 1))); do
+                echo "    - ${field_names[$i]} (${field_types[$i]})"
+            done
+        fi
+    else
+        local populated=0
+        if [[ ${#field_names[@]} -gt 0 ]]; then
+            local i
+            for i in $(seq 0 $((${#field_names[@]} - 1))); do
+                [[ -n "${field_values[$i]:-}" ]] && populated=$((populated + 1))
+            done
+        fi
+        echo "  Fields:   $populated"
+        if [[ ${#field_names[@]} -gt 0 ]]; then
+            local i
+            for i in $(seq 0 $((${#field_names[@]} - 1))); do
+                local val="${field_values[$i]:-}"
+                [[ -z "$val" ]] && continue
+                local display_val="$val"
+                if [[ "${field_types[$i]}" == "concealed" ]]; then
+                    display_val="****"
+                fi
+                echo "    - ${field_names[$i]} (${field_types[$i]}): $display_val"
+            done
+        fi
     fi
     if [[ -n "$opt_expires" ]]; then
         echo "  Expires:  $opt_expires"
+    fi
+
+    if [[ "$opt_dry_run" -eq 1 ]]; then
+        echo ""
+        echo "(dry run — no item created)"
+        exit 0
     fi
 
     echo ""

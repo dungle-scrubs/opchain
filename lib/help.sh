@@ -8,7 +8,7 @@ opchain $VERSION — Dual-token 1Password wrapper with secrets management
 
 USAGE:
     opchain [--read|--write] <command> [args...]
-    opchain create <title> [--vault name] [--category name] [--expires YYYY-MM-DD]
+    opchain create <title> [--vault name] [--category name] [--expires YYYY-MM-DD] [--dry-run]
     opchain secrets <list|check|validate> [path]
     opchain expires [list|add|remove] [ref]
     opchain setup
@@ -28,6 +28,7 @@ FLAGS:
     --read       Force read-only token
     --write      Force read-write token
     --expires    Set expiry date (YYYY-MM-DD) on op item create/edit
+    --dry-run    Preview the create command without executing (create only)
     --help, -h   Show this help
     --version    Show version
 
