@@ -45,8 +45,6 @@ setup_interactive() {
     echo "opchain setup — store dual tokens in macOS Keychain"
     echo ""
 
-    load_config
-
     local accounts=("$READ_ACCOUNT" "$WRITE_ACCOUNT")
     local labels=("Read-only" "Read-write")
 
@@ -211,6 +209,8 @@ main() {
     [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]] && show_help
     [[ "${1:-}" == "--version" ]] && show_version
 
+    load_config
+
     case "${1:-}" in
         create)  shift; handle_create "$@"; exit 0 ;;
         secrets) shift; handle_secrets "$@"; exit 0 ;;
@@ -233,8 +233,6 @@ main() {
     esac
 
     [[ $# -eq 0 ]] && { echo "Error: no command provided after flag" >&2; exit 1; }
-
-    load_config
 
     local token
     token=$(resolve_token "$mode" "$@")

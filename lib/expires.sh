@@ -86,7 +86,6 @@ handle_expires() {
 
 # List all tracked items with their expiry status.
 expires_list() {
-    load_config
     load_expires_list
 
     if [[ ${#EXPIRES_ITEMS[@]} -eq 0 ]]; then
@@ -95,9 +94,7 @@ expires_list() {
         return 0
     fi
 
-    local token
-    token=$(fetch_token "$READ_ACCOUNT")
-    export OP_SERVICE_ACCOUNT_TOKEN="$token"
+    setup_read_token
 
     echo "==> Tracked Items"
     local ref

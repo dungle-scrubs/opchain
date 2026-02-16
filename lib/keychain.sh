@@ -45,6 +45,17 @@ fetch_llm_key() {
     security find-generic-password -a "$LLM_ACCOUNT" -s "OPENROUTER_API_KEY" -w 2>/dev/null || true
 }
 
+# Export the read-only service account token for direct op CLI calls.
+# Internal subcommands (secrets check, expires list, create) call op directly
+# after the token is set — they don't re-enter opchain's command dispatch
+# because these are always read operations.
+# @sets OP_SERVICE_ACCOUNT_TOKEN environment variable
+setup_read_token() {
+    local token
+    token=$(fetch_token "$READ_ACCOUNT")
+    export OP_SERVICE_ACCOUNT_TOKEN="$token"
+}
+
 # --- Write detection ---
 
 # Determine if an op command requires write access.

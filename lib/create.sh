@@ -244,12 +244,9 @@ handle_create() {
     fi
 
     require_jq
-    load_config
 
-    # Fetch vault list (read token)
-    local token
-    token=$(fetch_token "$READ_ACCOUNT")
-    export OP_SERVICE_ACCOUNT_TOKEN="$token"
+    # Read token for vault list and category fetch
+    setup_read_token
 
     # Fetch categories dynamically (falls back to hardcoded)
     fetch_categories

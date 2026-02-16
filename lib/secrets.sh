@@ -69,10 +69,7 @@ secrets_check() {
     local target="${1:-.}"
     local failures=0
 
-    load_config
-    local token
-    token=$(fetch_token "$READ_ACCOUNT")
-    export OP_SERVICE_ACCOUNT_TOKEN="$token"
+    setup_read_token
 
     if [[ -f "$target" ]]; then
         secrets_check_file "$target" || failures=$((failures + 1))
@@ -118,10 +115,7 @@ secrets_check_file() {
 
 # Check all .env.op files under the configured projects directory.
 secrets_validate() {
-    load_config
-    local token
-    token=$(fetch_token "$READ_ACCOUNT")
-    export OP_SERVICE_ACCOUNT_TOKEN="$token"
+    setup_read_token
 
     local failures=0
     local found=0
