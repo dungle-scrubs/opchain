@@ -71,7 +71,7 @@ is_write_command() {
     case "$subcommand" in
         item|vault|document|group)
             case "$action" in
-                create|edit|delete|share) return 0 ;;
+                create|edit|delete|share|move) return 0 ;;
             esac
             ;;
     esac

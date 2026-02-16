@@ -102,7 +102,7 @@ handle_op_expires() {
     if [[ "$action" == "create" ]]; then
         local has_category=0
         for a in "${new_args[@]}"; do
-            [[ "$a" == "--category" ]] && has_category=1
+            [[ "$a" == "--category" || "$a" == --category=* ]] && has_category=1
         done
         if [[ $has_category -eq 0 ]]; then
             new_args+=("--category" "API Credential")
@@ -119,8 +119,10 @@ handle_op_expires() {
         local vault="" title=""
         for ((j = 0; j < ${#new_args[@]}; j++)); do
             case "${new_args[$j]}" in
-                --vault) vault="${new_args[$((j + 1))]}" ;;
-                --title) title="${new_args[$((j + 1))]}" ;;
+                --vault)   vault="${new_args[$((j + 1))]}" ;;
+                --vault=*)  vault="${new_args[$j]#--vault=}" ;;
+                --title)   title="${new_args[$((j + 1))]}" ;;
+                --title=*)  title="${new_args[$j]#--title=}" ;;
             esac
         done
 
