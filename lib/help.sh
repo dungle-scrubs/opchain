@@ -66,8 +66,8 @@ CONFIG:
     OPCHAIN_EXPIRES_THRESHOLD, OPCHAIN_LLM_ACCOUNT,
     OPCHAIN_LLM_MODEL
 
-    DEPENDENCIES:
-    - jq (required for 'opchain create'): brew install jq
+DEPENDENCIES:
+    jq (required for 'opchain create'): brew install jq
 
 EOF
     exit 0
