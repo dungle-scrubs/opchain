@@ -288,6 +288,128 @@ test_seq_empty_array_safety() {
     assert_eq "unguarded seq 0 -1 iterates" "2" "$bad_iterations"
 }
 
+test_secrets_inspect() {
+    echo "==> secrets_inspect"
+    # shellcheck source=../lib/secrets.sh
+    source "$SCRIPT_DIR/lib/secrets.sh"
+
+    local tmpdir
+    tmpdir=$(mktemp -d)
+
+    cat > "$tmpdir/.env.op" << 'EOF'
+# API keys
+API_KEY=op://Services/stripe/api-key
+STRIPE_USER=op://Services/stripe/username
+DB_PASS=op://Dev/database/password
+MISSING=op://Services/stripe/nonexistent
+SECTIONED=op://Services/stripe/Keys/secret
+EOF
+
+    # Mock setup_read_token (no Keychain needed)
+    setup_read_token() { true; }
+
+    # Mock op item get to return fake JSON
+    op() {
+        # op item get <item> --vault <vault> --format json
+        local item_name="$3"
+        case "$item_name" in
+            stripe)
+                cat << 'MOCK_JSON'
+{
+    "category": "API Credential",
+    "fields": [
+        {"label": "username", "type": "STRING"},
+        {"label": "api-key", "type": "CONCEALED"},
+        {"label": "website", "type": "URL"},
+        {"label": "secret", "type": "CONCEALED", "section": {"id": "keys", "label": "Keys"}}
+    ]
+}
+MOCK_JSON
+                ;;
+            database)
+                cat << 'MOCK_JSON'
+{
+    "category": "Database",
+    "fields": [
+        {"label": "username", "type": "STRING"},
+        {"label": "password", "type": "CONCEALED"},
+        {"label": "server", "type": "STRING"},
+        {"label": "port", "type": "STRING"}
+    ]
+}
+MOCK_JSON
+                ;;
+            *)
+                return 1
+                ;;
+        esac
+    }
+
+    local output
+    output=$(secrets_inspect_file "$tmpdir/.env.op" 2>&1) || true
+
+    # Item headers with category
+    echo "$output" | grep -q "op://Services/stripe.*API Credential"
+    assert_eq "stripe item with category" "0" "$?"
+
+    echo "$output" | grep -q "op://Dev/database.*Database"
+    assert_eq "database item with category" "0" "$?"
+
+    # Fields listed
+    echo "$output" | grep -q "api-key.*(CONCEALED)"
+    assert_eq "lists api-key field" "0" "$?"
+
+    echo "$output" | grep -q "website.*(URL)"
+    assert_eq "lists website field with type" "0" "$?"
+
+    echo "$output" | grep -q "Keys/secret"
+    assert_eq "lists sectioned field" "0" "$?"
+
+    # Reference matching
+    echo "$output" | grep -q "✓ API_KEY → api-key"
+    assert_eq "existing field shows ✓" "0" "$?"
+
+    echo "$output" | grep -q "✓ STRIPE_USER → username"
+    assert_eq "username field shows ✓" "0" "$?"
+
+    echo "$output" | grep -q "✓ DB_PASS → password"
+    assert_eq "database password shows ✓" "0" "$?"
+
+    echo "$output" | grep -q "✗ MISSING → nonexistent.*(field not found)"
+    assert_eq "missing field shows ✗" "0" "$?"
+
+    echo "$output" | grep -q "✓ SECTIONED → Keys/secret"
+    assert_eq "sectioned reference shows ✓" "0" "$?"
+
+    # No op:// references
+    cat > "$tmpdir/plain.env.op" << 'EOF'
+PLAIN_VAR=some-value
+OTHER=another-value
+EOF
+    local empty_output
+    empty_output=$(secrets_inspect_file "$tmpdir/plain.env.op" 2>&1) || true
+    echo "$empty_output" | grep -q "no op:// references"
+    assert_eq "no refs shows message" "0" "$?"
+
+    # Item not found
+    cat > "$tmpdir/bad.env.op" << 'EOF'
+KEY=op://Vault/nonexistent/field
+EOF
+    local bad_output
+    bad_output=$(secrets_inspect_file "$tmpdir/bad.env.op" 2>&1) || true
+    echo "$bad_output" | grep -q "ITEM NOT FOUND"
+    assert_eq "missing item shows NOT FOUND" "0" "$?"
+
+    echo "$bad_output" | grep -q "? KEY → field.*(item unavailable)"
+    assert_eq "unavailable item ref shows ?" "0" "$?"
+
+    # Restore real functions
+    unset -f op setup_read_token
+    # shellcheck source=../lib/keychain.sh
+    source "$SCRIPT_DIR/lib/keychain.sh"
+    rm -rf "$tmpdir"
+}
+
 test_cli_flags() {
     echo "==> CLI flags"
     local opchain="$SCRIPT_DIR/opchain"
@@ -401,6 +523,7 @@ test_expires_file_permissions
 test_seq_empty_array_safety
 test_handle_op_expires
 test_resolve_token
+test_secrets_inspect
 test_cli_flags
 
 echo ""
