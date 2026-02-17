@@ -13,9 +13,10 @@ handle_secrets() {
     case "$subcmd" in
         list)     secrets_list "$@" ;;
         check)    secrets_check "$@" ;;
+        inspect)  secrets_inspect "$@" ;;
         validate) secrets_validate "$@" ;;
         *)
-            echo "Usage: opchain secrets <list|check|validate> [path]" >&2
+            echo "Usage: opchain secrets <list|check|inspect|validate> [path]" >&2
             exit 1
             ;;
     esac
@@ -109,6 +110,139 @@ secrets_check_file() {
     done < "$file"
     echo ""
     return $has_failure
+}
+
+# --- Inspect ---
+
+# List available fields for items referenced in .env.op files.
+# Shows all fields on each referenced 1Password item so consumers can
+# verify their op:// field paths before deployment.
+# Requires: jq
+# @param $1 - file or directory path (default: .)
+secrets_inspect() {
+    local target="${1:-.}"
+
+    require_jq
+    setup_read_token
+
+    if [[ -f "$target" ]]; then
+        secrets_inspect_file "$target"
+    elif [[ -d "$target" ]]; then
+        local found=0
+        while IFS= read -r -d '' file; do
+            found=1
+            secrets_inspect_file "$file"
+        done < <(find "$target" -name '.env.op' -print0 2>/dev/null)
+        if [[ $found -eq 0 ]]; then
+            echo "No .env.op files found in $target" >&2
+        fi
+    else
+        echo "Error: $target not found" >&2
+        exit 1
+    fi
+}
+
+# Inspect a single .env.op file: fetch item metadata and list fields.
+# For each unique vault/item pair, calls `op item get` once and displays
+# all available fields alongside the env var references, marking whether
+# each referenced field exists on the item.
+# @param $1 - path to .env.op file
+# @returns 1 if any referenced field is missing
+secrets_inspect_file() {
+    local file="$1"
+    local tmpdir
+    tmpdir=$(mktemp -d)
+
+    echo "==> $file"
+
+    # Pass 1: collect references (vault, item, env_var, field_path)
+    while IFS='=' read -r key value; do
+        [[ -z "$key" || "$key" =~ ^[[:space:]]*# ]] && continue
+        key=$(trim "$key")
+        value=$(trim "$value")
+        [[ "$value" != op://* ]] && continue
+
+        local ref="${value#op://}"
+        local vault="${ref%%/*}"
+        ref="${ref#*/}"
+        local item="${ref%%/*}"
+        local field_path="${ref#*/}"
+
+        printf '%s\t%s\t%s\t%s\n' "$vault" "$item" "$key" "$field_path"
+    done < "$file" > "$tmpdir/refs"
+
+    if [[ ! -s "$tmpdir/refs" ]]; then
+        echo "  (no op:// references)"
+        echo ""
+        rm -rf "$tmpdir"
+        return
+    fi
+
+    # Pass 2: fetch and display each unique item
+    local has_missing=0
+    cut -f1,2 "$tmpdir/refs" | sort -u > "$tmpdir/items"
+
+    while IFS=$'\t' read -r vault item; do
+        echo ""
+        local json=""
+        local item_ok=0
+
+        if json=$(op item get "$item" --vault "$vault" --format json 2>/dev/null); then
+            item_ok=1
+            local category
+            category=$(echo "$json" | jq -r '.category // "Unknown"')
+            echo "  op://${vault}/${item}  [${category}]"
+
+            echo "    Fields:"
+            echo "$json" | jq -r '
+                .fields[]? |
+                "      " +
+                (if .section.label then .section.label + "/" else "" end) +
+                .label +
+                "  (" + .type + ")"
+            '
+        else
+            echo "  op://${vault}/${item}  [ITEM NOT FOUND]"
+            has_missing=1
+        fi
+
+        # Show references pointing to this item
+        echo "    References:"
+        awk -F'\t' -v v="$vault" -v i="$item" \
+            '$1==v && $2==i {print $3 "\t" $4}' "$tmpdir/refs" > "$tmpdir/match"
+
+        while IFS=$'\t' read -r env_var field_path; do
+            if [[ $item_ok -eq 1 ]]; then
+                local match_count
+                if [[ "$field_path" == */* ]]; then
+                    # Section/field reference
+                    local section="${field_path%%/*}"
+                    local field="${field_path#*/}"
+                    match_count=$(echo "$json" | jq -r \
+                        --arg s "$section" --arg f "$field" \
+                        '[.fields[]? | select(.section.label == $s and .label == $f)] | length')
+                else
+                    match_count=$(echo "$json" | jq -r \
+                        --arg f "$field_path" \
+                        '[.fields[]? | select(.label == $f)] | length')
+                fi
+
+                if [[ "$match_count" -gt 0 ]]; then
+                    echo "      ✓ ${env_var} → ${field_path}"
+                else
+                    echo "      ✗ ${env_var} → ${field_path}  (field not found)"
+                    has_missing=1
+                fi
+            else
+                echo "      ? ${env_var} → ${field_path}  (item unavailable)"
+            fi
+        done < "$tmpdir/match"
+
+    done < "$tmpdir/items"
+
+    echo ""
+    rm -rf "$tmpdir"
+    return $has_missing
 }
 
 # --- Validate ---
