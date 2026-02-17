@@ -140,6 +140,9 @@ opchain secrets list path/to/.env.op
 # Check if each op:// reference resolves
 opchain secrets check .env.op
 
+# Inspect available fields for each referenced item
+opchain secrets inspect .env.op
+
 # Validate all .env.op files under ~/dev/
 opchain secrets validate
 ```

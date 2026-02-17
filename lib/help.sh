@@ -18,6 +18,7 @@ COMMANDS:
     create <title>           Create a 1Password item with LLM-assisted suggestions
     secrets list [path]      List op:// references in .env.op files
     secrets check [path]     Resolve each op:// reference, report OK/FAIL
+    secrets inspect [path]   Show available fields for each referenced item
     secrets validate         Check all .env.op files under projects dir
     expires [list]           Show tracked items with expiry status
     expires add <ref>        Track an op:// item for expiry monitoring
