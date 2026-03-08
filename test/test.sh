@@ -485,6 +485,44 @@ test_edit_positional_arg_extraction() {
     rm -rf "$tmpdir"
 }
 
+test_parse_llm_response() {
+    echo "==> parse_llm_response"
+
+    # Valid response
+    local valid_raw
+    valid_raw=$(cat <<'JSON'
+{"choices":[{"message":{"content":"{\"category\":\"Login\",\"note\":\"A login item\",\"fields\":[{\"name\":\"username\",\"type\":\"text\",\"hint\":\"username\"}]}"}}]}
+JSON
+)
+    local result
+    result=$(parse_llm_response "$valid_raw")
+    assert_eq "valid response parses" "0" "$?"
+    echo "$result" | jq -e '.category == "Login"' > /dev/null 2>&1
+    assert_eq "category extracted" "0" "$?"
+
+    # Invalid category (not in whitelist)
+    local bad_cat_raw
+    bad_cat_raw=$(cat <<'JSON'
+{"choices":[{"message":{"content":"{\"category\":\"Nonexistent Category\",\"fields\":[]}"}}]}
+JSON
+)
+    assert_exit "invalid category rejected" 1 parse_llm_response "$bad_cat_raw"
+
+    # Markdown-fenced response
+    local fenced_raw
+    fenced_raw=$(printf '{"choices":[{"message":{"content":"```json\\n{\\"category\\":\\"Login\\",\\"fields\\":[]}\\n```"}}]}')
+    result=$(parse_llm_response "$fenced_raw" 2>/dev/null)
+    assert_eq "fenced response parses" "0" "$?"
+
+    # Empty response
+    assert_exit "empty response rejected" 1 parse_llm_response ""
+
+    # Malformed JSON
+    local bad_json_raw
+    bad_json_raw='{"choices":[{"message":{"content":"not json at all"}}]}'
+    assert_exit "malformed JSON rejected" 1 parse_llm_response "$bad_json_raw"
+}
+
 test_write_detection_extended() {
     echo "==> is_write_command (extended)"
     # user subcommand
@@ -678,6 +716,7 @@ test_handle_op_expires_equals_syntax
 test_edit_positional_arg_extraction
 test_resolve_token
 test_write_detection_extended
+test_parse_llm_response
 test_secrets_inspect
 test_setup_single_account
 test_cli_flags
