@@ -45,7 +45,7 @@ opchain automatically picks the least-privilege token:
 # Read token (default for reads and non-op commands)
 opchain op vault list
 opchain op item get --vault Dev "api-key"
-opchain varlock run -- ./start.sh
+opchain op run --env-file=.env.op -- ./start.sh
 
 # Write token (auto-detected for mutating op commands)
 opchain op item create --vault Dev --title "api-key"
@@ -147,21 +147,59 @@ opchain secrets inspect .env.op
 opchain secrets validate
 ```
 
-### Working with .env files
+### Working with `.env.op` files
+
+A `.env.op` file is a normal env file (`KEY=VALUE`) where values can be 1Password references.
 
 Create a `.env.op` template (safe to commit):
 
 ```bash
 # .env.op
+# comments and blank lines are allowed
 GEMINI_API_KEY=op://Personal/Gemini/credential
 DATABASE_URL=op://Dev/Postgres/connection-string
+STRIPE_SECRET=op://Services/Stripe/Keys/secret
 ```
+
+Notes:
+
+- Supports both `op://Vault/Item/field` and `op://Vault/Item/Section/field`
+- `opchain secrets list|check|inspect` only process values starting with `op://`
+- The file stores references, not secret values
 
 Run with secrets injected:
 
 ```bash
 opchain op run --env-file=.env.op -- npm run dev
 ```
+
+#### Parallel reads (external examples)
+
+Validate many refs in parallel (prints status only, not values):
+
+```bash
+opchain secrets list .env.op \
+  | awk -F= '/op:\/\// { gsub(/^[[:space:]]+/, "", $1); print $1, $2 }' \
+  | xargs -n 2 -P 8 sh -c '
+      key="$1"
+      ref="$2"
+      if opchain --read op read "$ref" >/dev/null 2>&1; then
+        printf "OK   %s\n" "$key"
+      else
+        printf "FAIL %s\n" "$key"
+      fi
+    ' _
+```
+
+If you need multiple fields from one item, fetch once and parse locally:
+
+```bash
+item_json=$(opchain --read op item get "Stripe" --vault Services --format json)
+api_key=$(printf '%s' "$item_json" | jq -r '.fields[] | select(.label=="api-key") | .value')
+endpoint=$(printf '%s' "$item_json" | jq -r '.fields[] | select(.label=="endpoint") | .value')
+```
+
+That avoids repeated network calls for the same item.
 
 ## Write command detection
 
@@ -174,7 +212,7 @@ These `op` subcommand + action pairs trigger the write token:
 | `document` | `create`, `edit`, `delete` |
 | `group` | `create`, `edit`, `delete` |
 
-Everything else uses the read token. Non-`op` commands (e.g., `varlock`) always use read.
+Everything else uses the read token. Non-`op` commands always use read.
 
 ## Configuration
 

@@ -66,7 +66,7 @@ test_write_detection() {
     assert_exit "op item get → read" 1 is_write_command op item get
     assert_exit "op item list → read" 1 is_write_command op item list
     assert_exit "op vault list → read" 1 is_write_command op vault list
-    assert_exit "non-op command → read" 1 is_write_command varlock run
+    assert_exit "non-op command → read" 1 is_write_command env run
     assert_exit "empty → read" 1 is_write_command
 }
 
@@ -552,7 +552,7 @@ test_resolve_token() {
     assert_eq "explicit write" "mock-write-token" "$(resolve_token write op item create)"
     assert_eq "auto read" "mock-read-token" "$(resolve_token auto op vault list)"
     assert_eq "auto write" "mock-write-token" "$(resolve_token auto op item create)"
-    assert_eq "auto non-op" "mock-read-token" "$(resolve_token auto varlock run)"
+    assert_eq "auto non-op" "mock-read-token" "$(resolve_token auto env run)"
 
     # Restore real fetch_token
     # shellcheck source=../lib/keychain.sh
