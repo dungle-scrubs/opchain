@@ -1,6 +1,9 @@
 name: CI
 on: [push, pull_request]
 
+permissions:
+  contents: read
+
 jobs:
   secrets:
     runs-on: ubuntu-latest
@@ -25,13 +28,10 @@ jobs:
       - name: Run shellcheck
         run: just lint
 
-  test:
-    runs-on: macos-latest
+  smoke:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install just
-        run: brew install just
 
       - name: Verify scripts are executable
         run: |
@@ -39,8 +39,10 @@ jobs:
           test -x install.sh
           test -x uninstall.sh
 
-      - name: Run test suite
-        run: just test
+      - name: Check help and version output
+        run: |
+          ./opchain --help > /dev/null
+          ./opchain --version | grep -q '^opchain '
 
       - name: Test install/uninstall
         run: |

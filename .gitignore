@@ -19,3 +19,7 @@ logs/
 .pi/
 CLAUDE.md
 AGENTS.md
+
+# Swift helper build artifacts
+helper/opchain-keychain-helper/.build/
+helper/opchain-keychain-helper/.swiftpm/

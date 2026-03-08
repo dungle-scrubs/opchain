@@ -1,0 +1,31 @@
+# Repository settings as code.
+# Requires the Probot Settings app (or equivalent automation) to apply these
+# settings to the GitHub repository.
+
+repository:
+  default_branch: main
+  delete_branch_on_merge: true
+  allow_squash_merge: true
+  allow_merge_commit: false
+  allow_rebase_merge: false
+  has_projects: false
+  has_wiki: false
+
+branches:
+  - name: main
+    protection:
+      required_pull_request_reviews:
+        required_approving_review_count: 1
+        dismiss_stale_reviews: true
+        require_code_owner_reviews: false
+      required_status_checks:
+        strict: true
+        contexts:
+          - secrets
+          - lint
+          - smoke
+          - codeql
+      enforce_admins: false
+      allow_force_pushes: false
+      allow_deletions: false
+      required_conversation_resolution: true
