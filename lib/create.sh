@@ -15,8 +15,8 @@ require_jq() {
 # --- Input sanitization ---
 
 # Strip control characters and cap length to defend against prompt injection.
-# The primary defense is output validation (JSON schema + category whitelist) —
-# this is defense in depth.
+# The primary defense is strict structural validation of the LLM output — this is
+# defense in depth.
 # @param $1 - raw title string
 # @returns sanitized title
 sanitize_title() {
@@ -31,14 +31,14 @@ sanitize_title() {
 # --- Categories ---
 
 # Fetch 1Password categories dynamically, fall back to hardcoded list.
-# Requires: OP_SERVICE_ACCOUNT_TOKEN set, jq available.
+# Requires: jq available.
 # Sets: OP_CATEGORIES array
 fetch_categories() {
     local categories=()
     if command -v jq > /dev/null 2>&1; then
         while IFS= read -r name; do
             [[ -n "$name" ]] && categories+=("$name")
-        done < <(op item template list --format=json 2>/dev/null | jq -r '.[].name' 2>/dev/null)
+        done < <(run_with_mode_capture read op item template list --format=json 2>/dev/null | jq -r '.[].name' 2>/dev/null)
     fi
     if [[ ${#categories[@]} -eq 0 ]]; then
         categories=("${FALLBACK_CATEGORIES[@]}")
@@ -172,8 +172,27 @@ Rules:
     echo "$response"
 }
 
+# Check whether a suggested field name is safe to pass to the op CLI.
+# Rejects empty names, option-like names, control chars, and characters that
+# would break field[type]=value syntax.
+# @param $1 - field name
+# @returns 0 if safe, 1 otherwise
+is_safe_field_name() {
+    local name="$1"
+    [[ -n "$name" ]] || return 1
+    [[ "$name" != -* ]] || return 1
+    [[ "$name" != *"="* ]] || return 1
+    [[ "$name" != *"["* ]] || return 1
+    [[ "$name" != *"]"* ]] || return 1
+    [[ "$name" != *$'\n'* ]] || return 1
+    [[ "$name" != *$'\r'* ]] || return 1
+    [[ "$name" != *$'\t'* ]] || return 1
+    [[ "$name" =~ [[:cntrl:]] ]] && return 1
+    return 0
+}
+
 # Parse and validate the LLM response JSON.
-# Validates: JSON structure, category against OP_CATEGORIES whitelist.
+# Validates: top-level structure, category whitelist, field names, and field types.
 # @param $1 - raw OpenRouter API response
 # @returns parsed suggestion JSON on stdout, or returns 1
 parse_llm_response() {
@@ -181,18 +200,24 @@ parse_llm_response() {
     [[ -z "$raw" ]] && return 1
 
     local content
-    content=$(echo "$raw" | jq -r '.choices[0].message.content // empty' 2>/dev/null) || return 1
+    content=$(printf '%s' "$raw" | jq -r '.choices[0].message.content // empty' 2>/dev/null) || return 1
     [[ -z "$content" ]] && return 1
 
     # Strip markdown fences if present
-    content=$(echo "$content" | grep -v '^\x60\x60\x60' | sed '/^$/d')
+    content=$(printf '%s\n' "$content" | grep -v '^\x60\x60\x60' | sed '/^$/d')
 
-    # Validate JSON structure
-    echo "$content" | jq empty 2>/dev/null || return 1
+    # Validate the overall shape before reading individual fields.
+    printf '%s' "$content" | jq -e '
+        type == "object" and
+        (.category | type == "string") and
+        ((.note // "") | type == "string") and
+        ((.fields // []) | type == "array") and
+        all(.fields[]?; type == "object" and (.name | type == "string") and (.type | type == "string") and ((.hint // "") | type == "string"))
+    ' > /dev/null 2>&1 || return 1
 
-    # Validate category against whitelist
+    # Validate category against whitelist.
     local suggested_cat
-    suggested_cat=$(echo "$content" | jq -r '.category // empty' 2>/dev/null) || return 1
+    suggested_cat=$(printf '%s' "$content" | jq -r '.category // empty' 2>/dev/null) || return 1
     local valid=0
     local cat
     for cat in "${OP_CATEGORIES[@]}"; do
@@ -201,11 +226,30 @@ parse_llm_response() {
             break
         fi
     done
-    if [[ $valid -eq 0 ]]; then
-        return 1
+    [[ $valid -eq 1 ]] || return 1
+
+    # Validate fields before they are shown to the user or converted to CLI args.
+    local field_count
+    field_count=$(printf '%s' "$content" | jq -r '(.fields // []) | length' 2>/dev/null) || return 1
+
+    if [[ "$field_count" -gt 0 ]]; then
+        local idx
+        for idx in $(seq 0 $((field_count - 1))); do
+            local field_name field_type field_hint
+            field_name=$(printf '%s' "$content" | jq -r ".fields[$idx].name" 2>/dev/null) || return 1
+            field_type=$(printf '%s' "$content" | jq -r ".fields[$idx].type" 2>/dev/null) || return 1
+            field_hint=$(printf '%s' "$content" | jq -r ".fields[$idx].hint // empty" 2>/dev/null) || return 1
+
+            is_safe_field_name "$field_name" || return 1
+            [[ ${#field_hint} -le 100 ]] || return 1
+            case "$field_type" in
+                concealed|text|url|email|date) ;;
+                *) return 1 ;;
+            esac
+        done
     fi
 
-    echo "$content"
+    printf '%s\n' "$content"
 }
 
 # --- Main create flow ---
@@ -259,14 +303,11 @@ handle_create() {
 
     require_jq
 
-    # Read token for vault list and category fetch
-    setup_read_token
-
     # Fetch categories dynamically (falls back to hardcoded)
     fetch_categories
 
     local vaults_json
-    vaults_json=$(op vault list --format=json 2>&1) || {
+    vaults_json=$(run_with_mode_capture read op vault list --format=json 2>&1) || {
         echo "Error: failed to list vaults" >&2
         echo "$vaults_json" >&2
         exit 1
@@ -491,11 +532,6 @@ handle_create() {
         exit 0
     fi
 
-    # Execute with write token
-    local write_token
-    write_token=$(fetch_token "$WRITE_ACCOUNT")
-    export OP_SERVICE_ACCOUNT_TOKEN="$write_token"
-
     local op_args=("op" "item" "create" "--vault" "$vault" "--category" "$category" "--title" "$title")
 
     if [[ ${#field_names[@]} -gt 0 ]]; then
@@ -516,13 +552,13 @@ handle_create() {
         op_args+=("expires[date]=$opt_expires")
     fi
 
-    "${op_args[@]}"
+    run_with_mode write "${op_args[@]}"
     local exit_code=$?
 
     if [[ $exit_code -eq 0 ]]; then
         echo "Item created successfully."
         if [[ -n "$opt_expires" ]]; then
-            add_expires_item "op://$vault/$title"
+            track_expires_item "$vault" "$title" || true
         fi
     else
         echo "Error: op item create failed (exit code $exit_code)" >&2

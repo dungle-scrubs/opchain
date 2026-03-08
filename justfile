@@ -15,6 +15,10 @@ test:
 # Lint + test
 check: lint test
 
+# Build the optional Keychain helper scaffold
+helper-build:
+    swift build -c release --package-path helper/opchain-keychain-helper
+
 # Install opchain via symlink
 install:
     ./install.sh

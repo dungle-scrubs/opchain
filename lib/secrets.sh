@@ -64,26 +64,179 @@ secrets_list_file() {
 
 # --- Check ---
 
-# Resolve op:// references in .env.op files and report OK/FAIL.
-# @param $1 - file or directory path (default: .)
-secrets_check() {
-    local target="${1:-.}"
-    local failures=0
+# Collect op:// references from a file into a tab-delimited cache file.
+# Output columns: file, env var, op:// ref
+# @param $1 - path to .env.op file
+# @param $2 - output file path
+collect_secret_refs_file() {
+    local file="$1"
+    local output_file="$2"
 
-    setup_read_token
+    while IFS='=' read -r key value; do
+        [[ -z "$key" || "$key" =~ ^[[:space:]]*# ]] && continue
+        key=$(trim "$key")
+        value=$(trim "$value")
+        [[ "$value" == op://* ]] || continue
+        printf '%s\t%s\t%s\n' "$file" "$key" "$value" >> "$output_file"
+    done < "$file"
+}
 
+# Validate each unique op:// ref once, in bounded parallel batches.
+# Output columns: ref, status
+# @param $1 - refs cache file
+# @param $2 - validation results file
+validate_secret_refs() {
+    local refs_file="$1"
+    local results_file="$2"
+    local jobs="${OPCHAIN_SECRETS_JOBS:-8}"
+    [[ "$jobs" =~ ^[1-9][0-9]*$ ]] || jobs=8
+
+    : > "$results_file"
+    [[ -s "$refs_file" ]] || return 0
+
+    local unique_refs_file="$results_file.unique"
+    cut -f3 "$refs_file" | sort -u > "$unique_refs_file"
+
+    local unique_refs=()
+    local ref
+    while IFS= read -r ref; do
+        [[ -n "$ref" ]] && unique_refs+=("$ref")
+    done < "$unique_refs_file"
+
+    local total=${#unique_refs[@]}
+    [[ $total -gt 0 ]] || return 0
+
+    local start end i
+    for ((start = 0; start < total; start += jobs)); do
+        end=$((start + jobs - 1))
+        [[ $end -ge $total ]] && end=$((total - 1))
+
+        local pids=()
+        for ((i = start; i <= end; i++)); do
+            (
+                if run_with_mode read op read "${unique_refs[$i]}" > /dev/null 2>&1; then
+                    echo "OK"
+                else
+                    echo "FAIL"
+                fi
+            ) > "${results_file}.status.$i" &
+            pids+=("$!")
+        done
+
+        if [[ ${#pids[@]} -gt 0 ]]; then
+            local pid
+            for pid in "${pids[@]}"; do
+                wait "$pid"
+            done
+        fi
+    done
+
+    for ((i = 0; i < total; i++)); do
+        local status
+        status=$(< "${results_file}.status.$i")
+        printf '%s\t%s\n' "${unique_refs[$i]}" "$status" >> "$results_file"
+        rm -f "${results_file}.status.$i"
+    done
+
+    rm -f "$unique_refs_file"
+}
+
+# Look up a cached validation result for a single op:// ref.
+# @param $1 - op:// ref
+# @param $2 - validation results file
+# @returns status string on stdout
+lookup_secret_ref_status() {
+    local ref="$1"
+    local results_file="$2"
+    awk -F'\t' -v ref="$ref" '$1 == ref { print $2; exit }' "$results_file"
+}
+
+# Print cached OK/FAIL results for a single .env.op file.
+# @param $1 - path to .env.op file
+# @param $2 - validation results file
+# @returns 1 if any reference failed
+render_secret_check_file() {
+    local file="$1"
+    local results_file="$2"
+    local has_failure=0
+
+    echo "==> $file"
+    while IFS='=' read -r key value; do
+        [[ -z "$key" || "$key" =~ ^[[:space:]]*# ]] && continue
+        key=$(trim "$key")
+        value=$(trim "$value")
+        [[ "$value" == op://* ]] || continue
+
+        local status
+        status=$(lookup_secret_ref_status "$value" "$results_file")
+        if [[ "$status" == "OK" ]]; then
+            echo "  OK   $key ($value)"
+        else
+            echo "  FAIL $key ($value)"
+            has_failure=1
+        fi
+    done < "$file"
+    echo ""
+    return $has_failure
+}
+
+# Check a file or directory using a shared validation cache.
+# Sets SECRET_CHECK_FOUND and SECRET_CHECK_FAILURES.
+# @param $1 - file or directory path
+check_secret_target() {
+    local target="$1"
+    local tmpdir
+    tmpdir=$(mktemp -d)
+
+    SECRET_CHECK_FOUND=0
+    SECRET_CHECK_FAILURES=0
+
+    local refs_file="$tmpdir/refs"
+    : > "$refs_file"
+
+    local files=()
     if [[ -f "$target" ]]; then
-        secrets_check_file "$target" || failures=$((failures + 1))
+        files+=("$target")
     elif [[ -d "$target" ]]; then
         while IFS= read -r -d '' file; do
-            secrets_check_file "$file" || failures=$((failures + 1))
+            files+=("$file")
         done < <(find "$target" -name '.env.op' -print0 2>/dev/null)
     else
+        rm -rf "$tmpdir"
         echo "Error: $target not found" >&2
         exit 1
     fi
 
-    if [[ $failures -gt 0 ]]; then
+    SECRET_CHECK_FOUND=${#files[@]}
+    if [[ $SECRET_CHECK_FOUND -eq 0 ]]; then
+        rm -rf "$tmpdir"
+        return 0
+    fi
+
+    local file
+    for file in "${files[@]}"; do
+        collect_secret_refs_file "$file" "$refs_file"
+    done
+
+    local results_file="$tmpdir/results"
+    validate_secret_refs "$refs_file" "$results_file"
+
+    for file in "${files[@]}"; do
+        render_secret_check_file "$file" "$results_file" || SECRET_CHECK_FAILURES=$((SECRET_CHECK_FAILURES + 1))
+    done
+
+    rm -rf "$tmpdir"
+    [[ $SECRET_CHECK_FAILURES -eq 0 ]]
+}
+
+# Resolve op:// references in .env.op files and report OK/FAIL.
+# @param $1 - file or directory path (default: .)
+secrets_check() {
+    local target="${1:-.}"
+
+    check_secret_target "$target"
+
+    if [[ $SECRET_CHECK_FAILURES -gt 0 ]]; then
         exit 1
     fi
 }
@@ -93,23 +246,9 @@ secrets_check() {
 # @returns 1 if any reference fails to resolve
 secrets_check_file() {
     local file="$1"
-    local has_failure=0
-    echo "==> $file"
-    while IFS='=' read -r key value; do
-        [[ -z "$key" || "$key" =~ ^[[:space:]]*# ]] && continue
-        key=$(trim "$key")
-        value=$(trim "$value")
-        [[ "$value" != op://* ]] && continue
 
-        if op read "$value" > /dev/null 2>&1; then
-            echo "  OK   $key ($value)"
-        else
-            echo "  FAIL $key ($value)"
-            has_failure=1
-        fi
-    done < "$file"
-    echo ""
-    return $has_failure
+    check_secret_target "$file"
+    [[ $SECRET_CHECK_FAILURES -eq 0 ]]
 }
 
 # --- Inspect ---
@@ -123,7 +262,6 @@ secrets_inspect() {
     local target="${1:-.}"
 
     require_jq
-    setup_read_token
 
     if [[ -f "$target" ]]; then
         secrets_inspect_file "$target"
@@ -187,7 +325,7 @@ secrets_inspect_file() {
         local json=""
         local item_ok=0
 
-        if json=$(op item get "$item" --vault "$vault" --format json 2>/dev/null); then
+        if json=$(run_with_mode_capture read op item get "$item" --vault "$vault" --format json 2>/dev/null); then
             item_ok=1
             local category
             category=$(echo "$json" | jq -r '.category // "Unknown"')
@@ -249,26 +387,19 @@ secrets_inspect_file() {
 
 # Check all .env.op files under the configured projects directory.
 secrets_validate() {
-    setup_read_token
+    check_secret_target "$PROJECTS_DIR"
 
-    local failures=0
-    local found=0
-
-    while IFS= read -r -d '' file; do
-        found=1
-        secrets_check_file "$file" || failures=$((failures + 1))
-    done < <(find "$PROJECTS_DIR" -name '.env.op' -print0 2>/dev/null)
-
-    if [[ $found -eq 0 ]]; then
+    if [[ $SECRET_CHECK_FOUND -eq 0 ]]; then
         echo "No .env.op files found under $PROJECTS_DIR" >&2
         exit 1
     fi
 
-    if [[ $failures -gt 0 ]]; then
-        echo "$failures file(s) with failures" >&2
+    check_expires_warnings
+
+    if [[ $SECRET_CHECK_FAILURES -gt 0 ]]; then
+        echo "$SECRET_CHECK_FAILURES file(s) with failures" >&2
         exit 1
     fi
 
     echo "All secrets validated."
-    check_expires_warnings
 }

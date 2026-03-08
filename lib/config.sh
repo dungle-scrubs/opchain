@@ -47,7 +47,7 @@ trim() {
 
 # Load config from file and env vars (three-tier: defaults → file → env).
 # Sets: PROJECTS_DIR, READ_ACCOUNT, WRITE_ACCOUNT, EXPIRES_THRESHOLD,
-#        LLM_ACCOUNT, LLM_MODEL
+#        LLM_ACCOUNT, LLM_MODEL, KEYCHAIN_HELPER
 load_config() {
     local projects_dir="$DEFAULT_PROJECTS_DIR"
     local read_account="$DEFAULT_READ_ACCOUNT"
@@ -55,6 +55,7 @@ load_config() {
     local expires_threshold="$DEFAULT_EXPIRES_THRESHOLD"
     local llm_account="$DEFAULT_LLM_ACCOUNT"
     local llm_model="$DEFAULT_LLM_MODEL"
+    local keychain_helper=""
 
     if [[ -f "$CONFIG_FILE" ]]; then
         local key value
@@ -69,6 +70,7 @@ load_config() {
                 expires_threshold) expires_threshold="$value" ;;
                 llm_account)       llm_account="$value" ;;
                 llm_model)         llm_model="$value" ;;
+                keychain_helper)   keychain_helper="$value" ;;
             esac
         done < "$CONFIG_FILE"
     fi
@@ -80,6 +82,7 @@ load_config() {
     EXPIRES_THRESHOLD="${OPCHAIN_EXPIRES_THRESHOLD:-$expires_threshold}"
     LLM_ACCOUNT="${OPCHAIN_LLM_ACCOUNT:-$llm_account}"
     LLM_MODEL="${OPCHAIN_LLM_MODEL:-$llm_model}"
+    KEYCHAIN_HELPER="${OPCHAIN_KEYCHAIN_HELPER:-$keychain_helper}"
 
     # Validate expires_threshold is a positive integer (bash 3.2 crashes on
     # non-numeric values in [[ -le ]] comparisons under set -u)
@@ -90,6 +93,7 @@ load_config() {
 
     # Expand tilde
     PROJECTS_DIR="${PROJECTS_DIR/#\~/$HOME}"
+    KEYCHAIN_HELPER="${KEYCHAIN_HELPER/#\~/$HOME}"
 }
 
 # --- Date utilities ---

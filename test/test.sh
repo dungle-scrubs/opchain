@@ -1,6 +1,6 @@
 #!/bin/bash
 # Local test runner for opchain
-# Tests pure functions that don't require op CLI or Keychain access.
+# Tests shell functions directly and CLI behavior with mocked op/security binaries.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -133,6 +133,7 @@ write_account=custom-write
 expires_threshold=7
 # this is a comment
 llm_model=openai/gpt-4o-mini
+keychain_helper=~/bin/opchain-keychain-helper
 EOF
 
     load_config
@@ -141,10 +142,12 @@ EOF
     assert_eq "write_account from config" "custom-write" "$WRITE_ACCOUNT"
     assert_eq "expires_threshold from config" "7" "$EXPIRES_THRESHOLD"
     assert_eq "llm_model from config" "openai/gpt-4o-mini" "$LLM_MODEL"
+    assert_eq "keychain_helper from config" "$HOME/bin/opchain-keychain-helper" "$KEYCHAIN_HELPER"
 
     # Test env var override
-    OPCHAIN_PROJECTS_DIR="/override/path" load_config
+    OPCHAIN_PROJECTS_DIR="/override/path" OPCHAIN_KEYCHAIN_HELPER="/override/helper" load_config
     assert_eq "env var overrides config" "/override/path" "$PROJECTS_DIR"
+    assert_eq "helper env overrides config" "/override/helper" "$KEYCHAIN_HELPER"
 
     # Restore
     CONFIG_FILE="$old_config"
@@ -187,12 +190,12 @@ test_expires_file_ops() {
 
     # add
     add_expires_item "op://Dev/test-item"
-    assert_eq "add writes file" "op://Dev/test-item" "$(cat "$EXPIRES_FILE")"
+    assert_eq "add writes structured record" $'Dev\ttest-item\t' "$(cat "$EXPIRES_FILE")"
 
     # duplicate
     add_expires_item "op://Dev/test-item"
     local count
-    count=$(grep -c "op://Dev/test-item" "$EXPIRES_FILE")
+    count=$(grep -c $'^Dev\ttest-item\t$' "$EXPIRES_FILE")
     assert_eq "no duplicate on re-add" "1" "$count"
 
     # second item
@@ -202,13 +205,70 @@ test_expires_file_ops() {
 
     # load
     load_expires_list
-    assert_eq "load returns 2 items" "2" "${#EXPIRES_ITEMS[@]}"
+    assert_eq "load returns 2 records" "2" "${#EXPIRES_RECORDS[@]}"
+    assert_eq "compat refs still exposed" "op://Dev/test-item" "${EXPIRES_ITEMS[0]}"
 
     # remove
     remove_expires_item "op://Dev/test-item" > /dev/null
     assert_eq "remove leaves one" "1" "$(wc -l < "$EXPIRES_FILE" | tr -d ' ')"
 
     # Restore
+    CONFIG_DIR="$old_config_dir"
+    EXPIRES_FILE="$old_expires"
+    rm -rf "$tmpdir"
+}
+
+test_legacy_expires_line_compatibility() {
+    echo "==> legacy expires line compatibility"
+
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    local old_config_dir="$CONFIG_DIR"
+    local old_expires="$EXPIRES_FILE"
+    CONFIG_DIR="$tmpdir"
+    EXPIRES_FILE="$tmpdir/expires"
+
+    printf 'op://Dev/legacy-item\n' > "$EXPIRES_FILE"
+    load_expires_list
+
+    assert_eq "legacy line loads as one record" "1" "${#EXPIRES_RECORDS[@]}"
+    assert_eq "legacy line normalizes to ref" "op://Dev/legacy-item" "${EXPIRES_ITEMS[0]}"
+    assert_eq "legacy line gets empty cached title" "" "$(expires_record_title "${EXPIRES_RECORDS[0]}")"
+
+    CONFIG_DIR="$old_config_dir"
+    EXPIRES_FILE="$old_expires"
+    rm -rf "$tmpdir"
+}
+
+test_tracking_ref_resolution() {
+    echo "==> tracking ref resolution"
+
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    local old_config_dir="$CONFIG_DIR"
+    local old_expires="$EXPIRES_FILE"
+    CONFIG_DIR="$tmpdir"
+    EXPIRES_FILE="$tmpdir/expires"
+
+    setup_read_token() { true; }
+    op() {
+        if [[ "$1" == "item" && "$2" == "get" ]]; then
+            cat << 'MOCK_JSON'
+{"id":"item-123","title":"API Key"}
+MOCK_JSON
+            return 0
+        fi
+        return 1
+    }
+
+    assert_eq "stable ref resolved" "op://Dev/item-123" "$(resolve_tracking_ref "Dev" "api-key")"
+    assert_exit "field path ref rejected" 1 is_valid_expires_ref "op://Dev/item-id/expires"
+    assert_eq "display label shows cached title and ref" "API Key [op://Dev/item-123]" "$(tracking_display_label $'Dev\titem-123\tAPI Key')"
+
+    track_expires_item "Dev" "api-key"
+    assert_eq "tracked record uses item id and title" $'Dev\titem-123\tAPI Key' "$(cat "$EXPIRES_FILE")"
+
+    unset -f op setup_read_token
     CONFIG_DIR="$old_config_dir"
     EXPIRES_FILE="$old_expires"
     rm -rf "$tmpdir"
@@ -410,6 +470,42 @@ EOF
     rm -rf "$tmpdir"
 }
 
+test_secrets_validate_reports_expiry_warnings_on_failure() {
+    echo "==> secrets_validate expiry warnings"
+
+    local old_projects_dir="${PROJECTS_DIR:-}"
+    PROJECTS_DIR="/tmp/mock-projects"
+
+    setup_read_token() { true; }
+    check_secret_target() {
+        # shellcheck disable=SC2034  # Mock sets globals consumed by secrets_validate.
+        SECRET_CHECK_FOUND=1
+        # shellcheck disable=SC2034  # Mock sets globals consumed by secrets_validate.
+        SECRET_CHECK_FAILURES=1
+        echo "==> /tmp/mock-projects/.env.op"
+        echo "  FAIL API_KEY (op://Dev/item-id/api-key)"
+        echo ""
+    }
+    check_expires_warnings() {
+        echo ""
+        echo "==> Expiry Warnings"
+        echo "  EXPIRING op://Dev/item-id (2026-06-15, 3 days)"
+    }
+
+    local output status
+    output=$(secrets_validate 2>&1) && status=0 || status=$?
+    assert_eq "validate exits non-zero on failures" "1" "$status"
+
+    echo "$output" | grep -q "Expiry Warnings"
+    assert_eq "warnings still shown when validation fails" "0" "$?"
+
+    echo "$output" | grep -q "1 file(s) with failures"
+    assert_eq "failure count still reported" "0" "$?"
+
+    unset -f setup_read_token check_secret_target check_expires_warnings
+    PROJECTS_DIR="$old_projects_dir"
+}
+
 test_handle_op_expires_equals_syntax() {
     echo "==> handle_op_expires --expires=DATE syntax"
 
@@ -420,8 +516,18 @@ test_handle_op_expires_equals_syntax() {
     CONFIG_DIR="$tmpdir"
     EXPIRES_FILE="$tmpdir/expires"
 
-    # Mock op: capture args to file
-    op() { printf '%s\n' "$@" > "$tmpdir/captured_args"; return 0; }
+    # Mock op: capture create args and resolve item IDs for tracking
+    setup_read_token() { true; }
+    op() {
+        if [[ "$1" == "item" && "$2" == "get" ]]; then
+            cat << 'MOCK_JSON'
+{"id":"item-123"}
+MOCK_JSON
+            return 0
+        fi
+        printf '%s\n' "$@" > "$tmpdir/captured_args"
+        return 0
+    }
 
     # Test: --expires=DATE stripped and converted to field syntax
     (handle_op_expires op item create --vault Dev --title "eq-key" --expires=2026-06-15) 2>/dev/null || true
@@ -430,9 +536,9 @@ test_handle_op_expires_equals_syntax() {
     ! grep -q '^--expires' "$tmpdir/captured_args"
     assert_eq "=syntax strips --expires" "0" "$?"
 
-    # Test: expiry tracking works with =syntax
-    [[ -f "$tmpdir/expires" ]] && grep -q 'op://Dev/eq-key' "$tmpdir/expires"
-    assert_eq "=syntax tracks item" "0" "$?"
+    # Test: expiry tracking resolves a stable item record with =syntax
+    [[ -f "$tmpdir/expires" ]] && grep -q $'^Dev\titem-123\t$' "$tmpdir/expires"
+    assert_eq "=syntax tracks item record" "0" "$?"
 
     # Test: invalid date rejected with =syntax
     local err
@@ -441,7 +547,7 @@ test_handle_op_expires_equals_syntax() {
     assert_eq "=syntax rejects invalid date" "0" "$?"
 
     # Cleanup
-    unset -f op
+    unset -f op setup_read_token
     CONFIG_DIR="$old_config_dir"
     EXPIRES_FILE="$old_expires"
     rm -rf "$tmpdir"
@@ -458,28 +564,38 @@ test_edit_positional_arg_extraction() {
     EXPIRES_FILE="$tmpdir/expires"
 
     # Mock op
-    op() { printf '%s\n' "$@" > "$tmpdir/captured_args"; return 0; }
+    setup_read_token() { true; }
+    op() {
+        if [[ "$1" == "item" && "$2" == "get" ]]; then
+            cat << 'MOCK_JSON'
+{"id":"item-123"}
+MOCK_JSON
+            return 0
+        fi
+        printf '%s\n' "$@" > "$tmpdir/captured_args"
+        return 0
+    }
 
     # Test: --vault=Dev style doesn't break positional arg extraction
     rm -f "$tmpdir/expires"
     (handle_op_expires op item edit --vault=Dev myitem --expires 2026-06-15) 2>/dev/null || true
-    [[ -f "$tmpdir/expires" ]] && grep -q 'op://Dev/myitem' "$tmpdir/expires"
-    assert_eq "=style vault finds positional item" "0" "$?"
+    [[ -f "$tmpdir/expires" ]] && grep -q $'^Dev\titem-123\t$' "$tmpdir/expires"
+    assert_eq "=style vault finds positional item record" "0" "$?"
 
     # Test: multiple --flag=value before positional arg
     rm -f "$tmpdir/expires"
     (handle_op_expires op item edit --vault=Prod --format=json myedit --expires 2026-06-15) 2>/dev/null || true
-    [[ -f "$tmpdir/expires" ]] && grep -q 'op://Prod/myedit' "$tmpdir/expires"
-    assert_eq "multiple =style flags find positional" "0" "$?"
+    [[ -f "$tmpdir/expires" ]] && grep -q $'^Prod\titem-123\t$' "$tmpdir/expires"
+    assert_eq "multiple =style flags find positional item record" "0" "$?"
 
     # Test: mixed --flag value and --flag=value
     rm -f "$tmpdir/expires"
     (handle_op_expires op item edit --vault Staging --format=json editme --expires 2026-06-15) 2>/dev/null || true
-    [[ -f "$tmpdir/expires" ]] && grep -q 'op://Staging/editme' "$tmpdir/expires"
-    assert_eq "mixed flag styles find positional" "0" "$?"
+    [[ -f "$tmpdir/expires" ]] && grep -q $'^Staging\titem-123\t$' "$tmpdir/expires"
+    assert_eq "mixed flag styles find positional item record" "0" "$?"
 
     # Cleanup
-    unset -f op
+    unset -f op setup_read_token
     CONFIG_DIR="$old_config_dir"
     EXPIRES_FILE="$old_expires"
     rm -rf "$tmpdir"
@@ -521,6 +637,30 @@ JSON
     local bad_json_raw
     bad_json_raw='{"choices":[{"message":{"content":"not json at all"}}]}'
     assert_exit "malformed JSON rejected" 1 parse_llm_response "$bad_json_raw"
+
+    # Invalid field type
+    local bad_type_raw
+    bad_type_raw=$(cat <<'JSON'
+{"choices":[{"message":{"content":"{\"category\":\"Login\",\"fields\":[{\"name\":\"username\",\"type\":\"shell\"}]}"}}]}
+JSON
+)
+    assert_exit "invalid field type rejected" 1 parse_llm_response "$bad_type_raw"
+
+    # Unsafe field name
+    local bad_name_raw
+    bad_name_raw=$(cat <<'JSON'
+{"choices":[{"message":{"content":"{\"category\":\"Login\",\"fields\":[{\"name\":\"--vault\",\"type\":\"text\"}]}"}}]}
+JSON
+)
+    assert_exit "unsafe field name rejected" 1 parse_llm_response "$bad_name_raw"
+
+    # Invalid fields shape
+    local bad_shape_raw
+    bad_shape_raw=$(cat <<'JSON'
+{"choices":[{"message":{"content":"{\"category\":\"Login\",\"fields\":{\"name\":\"username\"}}"}}]}
+JSON
+)
+    assert_exit "invalid fields shape rejected" 1 parse_llm_response "$bad_shape_raw"
 }
 
 test_write_detection_extended() {
@@ -619,6 +759,269 @@ test_cli_flags() {
 
     "$opchain" --bogus 2>&1 | grep -q "Unknown flag" || true
     assert_exit "unknown flag → error" 1 "$opchain" --bogus
+
+    output=$("$opchain" env 2>&1 || true)
+    echo "$output" | grep -q "only 'op' passthrough commands"
+    assert_eq "non-op passthrough rejected" "0" "$?"
+    assert_exit "non-op default → error" 1 "$opchain" env
+
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    cat > "$tmpdir/security" << 'EOF'
+#!/bin/bash
+if [[ "$1" == "find-generic-password" && "$2" == "-a" ]]; then
+    echo "mock-token"
+    exit 0
+fi
+exit 1
+EOF
+    chmod +x "$tmpdir/security"
+
+    output=$(PATH="$tmpdir:$PATH" "$opchain" exec --read -- /bin/sh -c 'printf "%s" "${OP_SERVICE_ACCOUNT_TOKEN:+present}"')
+    assert_eq "exec exports token only when requested" "present" "$output"
+
+    output=$(PATH="$tmpdir:$PATH" "$opchain" exec --write -- /bin/echo nope 2>&1 || true)
+    echo "$output" | grep -q "requires --confirm-write"
+    assert_eq "write exec requires confirmation" "0" "$?"
+    assert_exit "write exec without confirmation fails" 1 env PATH="$tmpdir:$PATH" "$opchain" exec --write -- /bin/echo nope
+
+    output=$(PATH="$tmpdir:$PATH" "$opchain" exec --write --confirm-write -- /bin/sh -c 'printf "%s" "${OP_SERVICE_ACCOUNT_TOKEN:+present}"')
+    assert_eq "write exec works with confirmation" "present" "$output"
+
+    output=$("$opchain" doctor 2>&1 || true)
+    echo "$output" | grep -q "not configured"
+    assert_eq "doctor fails without helper" "0" "$?"
+    assert_exit "doctor without helper exits non-zero" 1 "$opchain" doctor
+
+    output=$("$opchain" doctor --json 2>&1 || true)
+    echo "$output" | jq -e '.ok == false and .failureCount == 1 and .results[1].check == "helper"' > /dev/null 2>&1
+    assert_eq "doctor json reports missing helper" "0" "$?"
+    assert_exit "doctor json without helper exits non-zero" 1 "$opchain" doctor --json
+
+    rm -rf "$tmpdir"
+}
+
+test_doctor_with_fake_helper() {
+    echo "==> doctor with fake helper"
+
+    local opchain="$SCRIPT_DIR/opchain"
+    local tmpdir
+    tmpdir=$(mktemp -d)
+
+    cat > "$tmpdir/opchain-keychain-helper" << 'EOF'
+#!/bin/bash
+set -euo pipefail
+state_dir="${OPCHAIN_FAKE_STATE:?}"
+case "$1" in
+    exec)
+        account=""
+        shift
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                --account) account="$2"; shift 2 ;;
+                --) shift; break ;;
+                *) exit 1 ;;
+            esac
+        done
+        printf '%s\n' "$account" >> "$state_dir/doctor_helper_exec_accounts"
+        export OP_SERVICE_ACCOUNT_TOKEN="helper-$account"
+        exec "$@"
+        ;;
+    token)
+        [[ "$2" == "--account" ]] || exit 1
+        printf '%s\n' "$3" >> "$state_dir/doctor_helper_token_accounts"
+        printf 'helper-%s\n' "$3"
+        ;;
+    *) exit 1 ;;
+esac
+EOF
+    chmod +x "$tmpdir/opchain-keychain-helper"
+
+    cat > "$tmpdir/codesign" << 'EOF'
+#!/bin/bash
+if [[ "$1" == "--verify" ]]; then
+    exit 0
+fi
+if [[ "$1" == "-dv" ]]; then
+    echo 'Identifier=dev.kevin.opchain-keychain-helper' >&2
+    echo 'Authority=opchain-local-signing' >&2
+    echo 'TeamIdentifier=not set' >&2
+    exit 0
+fi
+exit 1
+EOF
+    chmod +x "$tmpdir/codesign"
+
+    local output
+    output=$(PATH="$tmpdir:$PATH" OPCHAIN_FAKE_STATE="$tmpdir" OPCHAIN_KEYCHAIN_HELPER="$tmpdir/opchain-keychain-helper" "$opchain" doctor)
+    echo "$output" | grep -q 'helper signature'
+    assert_eq "doctor verifies helper signature" "0" "$?"
+    echo "$output" | grep -q 'helper identity — Identifier=dev.kevin.opchain-keychain-helper; Authority=opchain-local-signing; TeamIdentifier=not set'
+    assert_eq "doctor reports signing identity" "0" "$?"
+    echo "$output" | grep -q 'helper symlink — not a symlink'
+    assert_eq "doctor reports helper symlink state" "0" "$?"
+    echo "$output" | grep -q 'keychain acl — manual check required'
+    assert_eq "doctor warns about manual ACL check" "0" "$?"
+    echo "$output" | grep -q 'summary — helper configuration looks good'
+    assert_eq "doctor reports healthy summary" "0" "$?"
+
+    output=$(PATH="$tmpdir:$PATH" OPCHAIN_FAKE_STATE="$tmpdir" OPCHAIN_KEYCHAIN_HELPER="$tmpdir/opchain-keychain-helper" "$opchain" doctor --json)
+    echo "$output" | jq -e '.ok == true and .warningCount == 1 and (.results[] | select(.check == "helper identity") | .details == "Identifier=dev.kevin.opchain-keychain-helper; Authority=opchain-local-signing; TeamIdentifier=not set")' > /dev/null 2>&1
+    assert_eq "doctor json reports identity and warning count" "0" "$?"
+    echo "$output" | jq -e '([.results[] | select(.level == "WARN")] | length) == 1' > /dev/null 2>&1
+    assert_eq "doctor json includes acl warning" "0" "$?"
+
+    assert_eq "doctor checked helper token accounts" $'opchain-read\nopchain-write\nopchain-read\nopchain-write' "$(cat "$tmpdir/doctor_helper_token_accounts")"
+    assert_eq "doctor checked helper exec accounts" $'opchain-read\nopchain-write\nopchain-read\nopchain-write' "$(cat "$tmpdir/doctor_helper_exec_accounts")"
+
+    rm -rf "$tmpdir"
+}
+
+test_cli_integration_with_fake_op() {
+    echo "==> CLI integration with fake op"
+
+    local opchain="$SCRIPT_DIR/opchain"
+    local tmpdir
+    tmpdir=$(mktemp -d)
+
+    cat > "$tmpdir/security" << 'EOF'
+#!/bin/bash
+account=""
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -a) account="$2"; shift 2 ;;
+        *) shift ;;
+    esac
+done
+case "$account" in
+    opchain-read) echo "read-token" ;;
+    opchain-write) echo "write-token" ;;
+    *) exit 1 ;;
+esac
+EOF
+    chmod +x "$tmpdir/security"
+
+    cat > "$tmpdir/op" << 'EOF'
+#!/bin/bash
+set -euo pipefail
+state_dir="${OPCHAIN_FAKE_STATE:?}"
+if [[ "$1" == "vault" && "$2" == "list" && "${3:-}" == "--format=json" ]]; then
+    printf '%s\n' "$OP_SERVICE_ACCOUNT_TOKEN" > "$state_dir/vault_list_token"
+    printf '[{"name":"Dev"}]\n'
+    exit 0
+fi
+if [[ "$1" == "item" && "$2" == "create" ]]; then
+    printf '%s\n' "$OP_SERVICE_ACCOUNT_TOKEN" > "$state_dir/item_create_token"
+    printf '%s\n' "$@" > "$state_dir/item_create_args"
+    exit 0
+fi
+if [[ "$1" == "item" && "$2" == "get" ]]; then
+    printf '{"id":"item-123","title":"Tracked API Key"}\n'
+    exit 0
+fi
+if [[ "$1" == "read" && "$2" == "op://Dev/item-123/expires" ]]; then
+    printf '2026-06-15\n'
+    exit 0
+fi
+exit 1
+EOF
+    chmod +x "$tmpdir/op"
+
+    local output
+    output=$(PATH="$tmpdir:$PATH" OPCHAIN_FAKE_STATE="$tmpdir" XDG_CONFIG_HOME="$tmpdir/config" "$opchain" op vault list --format=json)
+    assert_eq "read passthrough reaches fake op" "[{\"name\":\"Dev\"}]" "$output"
+    assert_eq "read token selected for vault list" "read-token" "$(cat "$tmpdir/vault_list_token")"
+
+    PATH="$tmpdir:$PATH" OPCHAIN_FAKE_STATE="$tmpdir" XDG_CONFIG_HOME="$tmpdir/config" "$opchain" op item create --vault Dev --title "api-key" --expires 2026-06-15 > /dev/null
+    assert_eq "write token selected for create" "write-token" "$(cat "$tmpdir/item_create_token")"
+    grep -q '^expires\[date\]=2026-06-15$' "$tmpdir/item_create_args"
+    assert_eq "expires passthrough adds field" "0" "$?"
+    grep -q '^API Credential$' "$tmpdir/item_create_args"
+    assert_eq "expires passthrough adds default category" "0" "$?"
+    assert_eq "auto-tracking stores structured record" $'Dev\titem-123\tTracked API Key' "$(cat "$tmpdir/config/opchain/expires")"
+
+    output=$(PATH="$tmpdir:$PATH" OPCHAIN_FAKE_STATE="$tmpdir" XDG_CONFIG_HOME="$tmpdir/config" "$opchain" expires)
+    echo "$output" | grep -q 'Tracked API Key \[op://Dev/item-123\]'
+    assert_eq "expires output shows title and stable ref" "0" "$?"
+
+    rm -rf "$tmpdir"
+}
+
+test_cli_integration_with_fake_helper() {
+    echo "==> CLI integration with fake helper"
+
+    local opchain="$SCRIPT_DIR/opchain"
+    local tmpdir
+    tmpdir=$(mktemp -d)
+
+    cat > "$tmpdir/opchain-keychain-helper" << 'EOF'
+#!/bin/bash
+set -euo pipefail
+state_dir="${OPCHAIN_FAKE_STATE:?}"
+case "$1" in
+    exec)
+        account=""
+        shift
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                --account) account="$2"; shift 2 ;;
+                --) shift; break ;;
+                *) exit 1 ;;
+            esac
+        done
+        printf '%s\n' "$account" >> "$state_dir/helper_exec_accounts"
+        export OP_SERVICE_ACCOUNT_TOKEN="helper-$account"
+        exec "$@"
+        ;;
+    token)
+        [[ "$2" == "--account" ]] || exit 1
+        printf '%s\n' "$3" >> "$state_dir/helper_token_accounts"
+        printf 'helper-%s\n' "$3"
+        ;;
+    *) exit 1 ;;
+esac
+EOF
+    chmod +x "$tmpdir/opchain-keychain-helper"
+
+    cat > "$tmpdir/op" << 'EOF'
+#!/bin/bash
+set -euo pipefail
+state_dir="${OPCHAIN_FAKE_STATE:?}"
+if [[ "$1" == "vault" && "$2" == "list" && "${3:-}" == "--format=json" ]]; then
+    printf '%s\n' "$OP_SERVICE_ACCOUNT_TOKEN" > "$state_dir/helper_vault_list_token"
+    printf '[{"name":"Dev"}]\n'
+    exit 0
+fi
+if [[ "$1" == "read" && "$2" == "op://Dev/item-123/expires" ]]; then
+    printf '%s\n' "$OP_SERVICE_ACCOUNT_TOKEN" > "$state_dir/helper_expires_read_token"
+    printf '2026-06-15\n'
+    exit 0
+fi
+exit 1
+EOF
+    chmod +x "$tmpdir/op"
+
+    mkdir -p "$tmpdir/config/opchain"
+    printf 'Dev\titem-123\tCached Title\n' > "$tmpdir/config/opchain/expires"
+
+    local output
+    output=$(PATH="$tmpdir:$PATH" OPCHAIN_FAKE_STATE="$tmpdir" XDG_CONFIG_HOME="$tmpdir/config" OPCHAIN_KEYCHAIN_HELPER="$tmpdir/opchain-keychain-helper" "$opchain" op vault list --format=json)
+    assert_eq "helper passthrough reaches fake op" "[{\"name\":\"Dev\"}]" "$output"
+    assert_eq "helper exec selected read account" "opchain-read" "$(cat "$tmpdir/helper_exec_accounts")"
+    assert_eq "helper exec injected read token" "helper-opchain-read" "$(cat "$tmpdir/helper_vault_list_token")"
+
+    output=$(PATH="$tmpdir:$PATH" OPCHAIN_FAKE_STATE="$tmpdir" XDG_CONFIG_HOME="$tmpdir/config" OPCHAIN_KEYCHAIN_HELPER="$tmpdir/opchain-keychain-helper" "$opchain" expires)
+    echo "$output" | grep -q 'Cached Title \[op://Dev/item-123\]'
+    assert_eq "expires uses cached title with helper" "0" "$?"
+    assert_eq "helper exec used for top-level and internal read flows" $'opchain-read\nopchain-read' "$(cat "$tmpdir/helper_exec_accounts")"
+    assert_eq "internal read got helper exec token" "helper-opchain-read" "$(cat "$tmpdir/helper_expires_read_token")"
+    if [[ -f "$tmpdir/helper_token_accounts" ]]; then
+        assert_eq "helper token path not used for expires" "" "$(cat "$tmpdir/helper_token_accounts")"
+    else
+        assert_eq "helper token path not used for expires" "missing" "missing"
+    fi
+
+    rm -rf "$tmpdir"
 }
 
 test_handle_op_expires() {
@@ -631,8 +1034,18 @@ test_handle_op_expires() {
     CONFIG_DIR="$tmpdir"
     EXPIRES_FILE="$tmpdir/expires"
 
-    # Mock op: capture args to file
-    op() { printf '%s\n' "$@" > "$tmpdir/captured_args"; return 0; }
+    # Mock op: capture create args and resolve item IDs for tracking
+    setup_read_token() { true; }
+    op() {
+        if [[ "$1" == "item" && "$2" == "get" ]]; then
+            cat << 'MOCK_JSON'
+{"id":"item-123"}
+MOCK_JSON
+            return 0
+        fi
+        printf '%s\n' "$@" > "$tmpdir/captured_args"
+        return 0
+    }
 
     # Test: --expires stripped and converted to field syntax
     (handle_op_expires op item create --vault Dev --title "test-key" --expires 2026-06-15) 2>/dev/null || true
@@ -648,14 +1061,14 @@ test_handle_op_expires() {
     # Test: =style vault/title for expiry tracking
     rm -f "$tmpdir/expires"
     (handle_op_expires op item create --vault=Prod --title="api-key" --expires 2026-06-15) 2>/dev/null || true
-    [[ -f "$tmpdir/expires" ]] && grep -q 'op://Prod/api-key' "$tmpdir/expires"
-    assert_eq "tracks =style vault/title" "0" "$?"
+    [[ -f "$tmpdir/expires" ]] && grep -q $'^Prod\titem-123\t$' "$tmpdir/expires"
+    assert_eq "tracks =style vault/title item record" "0" "$?"
 
     # Test: space-style vault/title for expiry tracking
     rm -f "$tmpdir/expires"
     (handle_op_expires op item create --vault Dev --title "space-key" --expires 2026-06-15) 2>/dev/null || true
-    [[ -f "$tmpdir/expires" ]] && grep -q 'op://Dev/space-key' "$tmpdir/expires"
-    assert_eq "tracks space-style vault/title" "0" "$?"
+    [[ -f "$tmpdir/expires" ]] && grep -q $'^Dev\titem-123\t$' "$tmpdir/expires"
+    assert_eq "tracks space-style vault/title item record" "0" "$?"
 
     # Test: invalid date rejected
     local err
@@ -664,7 +1077,7 @@ test_handle_op_expires() {
     assert_eq "rejects invalid date" "0" "$?"
 
     # Cleanup
-    unset -f op
+    unset -f op setup_read_token
     CONFIG_DIR="$old_config_dir"
     EXPIRES_FILE="$old_expires"
     rm -rf "$tmpdir"
@@ -694,6 +1107,31 @@ test_resolve_token() {
     source "$SCRIPT_DIR/lib/keychain.sh"
 }
 
+test_fetch_token_with_helper() {
+    echo "==> fetch_token with helper"
+
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    local old_helper="${KEYCHAIN_HELPER:-}"
+
+    cat > "$tmpdir/helper" << 'EOF'
+#!/bin/bash
+if [[ "$1" == "token" && "$2" == "--account" ]]; then
+    echo "helper-$3"
+    exit 0
+fi
+exit 1
+EOF
+    chmod +x "$tmpdir/helper"
+
+    KEYCHAIN_HELPER="$tmpdir/helper"
+    assert_eq "helper fetches read token" "helper-opchain-read" "$(fetch_token "opchain-read")"
+    assert_eq "helper resolves write account" "opchain-write" "$(resolve_account auto op item create)"
+
+    KEYCHAIN_HELPER="$old_helper"
+    rm -rf "$tmpdir"
+}
+
 # --- Run ---
 
 echo "opchain test suite"
@@ -708,6 +1146,8 @@ test_sanitize_title
 test_config_parsing
 test_secrets_list_file
 test_expires_file_ops
+test_legacy_expires_line_compatibility
+test_tracking_ref_resolution
 test_expires_threshold_validation
 test_expires_file_permissions
 test_seq_empty_array_safety
@@ -715,11 +1155,16 @@ test_handle_op_expires
 test_handle_op_expires_equals_syntax
 test_edit_positional_arg_extraction
 test_resolve_token
+test_fetch_token_with_helper
 test_write_detection_extended
 test_parse_llm_response
 test_secrets_inspect
+test_secrets_validate_reports_expiry_warnings_on_failure
 test_setup_single_account
 test_cli_flags
+test_doctor_with_fake_helper
+test_cli_integration_with_fake_op
+test_cli_integration_with_fake_helper
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

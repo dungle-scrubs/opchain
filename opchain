@@ -126,7 +126,88 @@ setup_interactive() {
     fi
 
     echo "Done. Tokens stored in login keychain."
-    echo "Set keychain items to 'Allow all applications' to avoid biometric prompts."
+    echo "Keep the default Keychain access controls. Do not use 'Allow all applications'."
+    echo "If you need non-interactive automation, use a dedicated helper binary with explicit Keychain access instead of broad ACLs."
+}
+
+# Execute a command with the account resolved for the given mode.
+# Uses the helper binary when configured, otherwise exports the token locally.
+# @param $1 - mode: read, write, or auto
+# @param $@ - command to exec
+exec_with_mode() {
+    local mode="$1"
+    shift
+
+    local account
+    account=$(resolve_account "$mode" "$@")
+
+    if has_keychain_helper; then
+        exec "$KEYCHAIN_HELPER" exec --account "$account" -- "$@"
+    fi
+
+    local token
+    token=$(fetch_token "$account")
+    export OP_SERVICE_ACCOUNT_TOKEN="$token"
+    exec "$@"
+}
+
+# Execute a non-op command with an explicitly requested token.
+# This is opt-in because exporting a 1Password token to arbitrary processes is risky.
+# Write-token exec requires an extra confirmation flag.
+# @param $@ - [--read|--write] [--confirm-write] -- <command> [args...]
+handle_exec() {
+    local mode="read"
+    local confirm_write=0
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --read)          mode="read"; shift ;;
+            --write)         mode="write"; shift ;;
+            --confirm-write) confirm_write=1; shift ;;
+            --)              break ;;
+            *)
+                echo "Usage: opchain exec [--read|--write] [--confirm-write] -- <command> [args...]" >&2
+                exit 1
+                ;;
+        esac
+    done
+
+    if [[ "$mode" == "write" && $confirm_write -ne 1 ]]; then
+        echo "Error: write-token exec requires --confirm-write." >&2
+        echo "This exports a write-capable 1Password token to another process." >&2
+        exit 1
+    fi
+
+    if [[ "${1:-}" != "--" ]]; then
+        echo "Usage: opchain exec [--read|--write] [--confirm-write] -- <command> [args...]" >&2
+        exit 1
+    fi
+    shift
+
+    if [[ $# -eq 0 ]]; then
+        echo "Error: no command provided after '--'" >&2
+        exit 1
+    fi
+
+    exec_with_mode "$mode" "$@"
+}
+
+# Run doctor diagnostics in text or JSON mode.
+# @param $@ - optional --json flag
+handle_doctor() {
+    local format="text"
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --json) format="json"; shift ;;
+            *)
+                echo "Usage: opchain doctor [--json]" >&2
+                exit 1
+                ;;
+        esac
+    done
+
+    run_doctor "$format"
 }
 
 # --- Main ---
@@ -141,10 +222,12 @@ main() {
         create)  shift; handle_create "$@"; exit 0 ;;
         secrets) shift; handle_secrets "$@"; exit 0 ;;
         expires) shift; handle_expires "$@"; exit 0 ;;
+        exec)    shift; handle_exec "$@" ;;
+        doctor)  shift; handle_doctor "$@"; exit $? ;;
         setup)   shift; setup_interactive "$@"; exit 0 ;;
     esac
 
-    [[ $# -eq 0 ]] && { echo "Usage: opchain [--read|--write] <command> [args...]" >&2; exit 1; }
+    [[ $# -eq 0 ]] && { echo "Usage: opchain [--read|--write] op <command> [args...]" >&2; exit 1; }
 
     # Parse --read / --write flag
     local mode="auto"
@@ -160,9 +243,11 @@ main() {
 
     [[ $# -eq 0 ]] && { echo "Error: no command provided after flag" >&2; exit 1; }
 
-    local token
-    token=$(resolve_token "$mode" "$@")
-    export OP_SERVICE_ACCOUNT_TOKEN="$token"
+    if [[ "${1:-}" != "op" ]]; then
+        echo "Error: only 'op' passthrough commands are allowed by default." >&2
+        echo "Use 'opchain exec [--read|--write] -- <command>' for explicit token injection." >&2
+        exit 1
+    fi
 
     # Intercept --expires on op item create/edit
     if [[ "${1:-}" == "op" && "${2:-}" == "item" ]] && \
@@ -175,7 +260,7 @@ main() {
         done
     fi
 
-    exec "$@"
+    exec_with_mode "$mode" "$@"
 }
 
 main "$@"
