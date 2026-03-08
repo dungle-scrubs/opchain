@@ -56,6 +56,38 @@ setup_read_token() {
     export OP_SERVICE_ACCOUNT_TOKEN="$token"
 }
 
+# --- Single-account setup ---
+
+# Store a single token in Keychain for a named account.
+# @param $1 - keychain account name
+setup_single_account() {
+    local account="$1"
+
+    echo "opchain setup — store token for account: $account"
+    echo ""
+
+    if security find-generic-password -a "$account" -s "$SECRET_NAME" > /dev/null 2>&1; then
+        echo "  Existing entry found."
+        read -rp "  Overwrite? [y/N] " confirm
+        if [[ "$confirm" != [yY] ]]; then
+            echo "  Skipped."
+            return 0
+        fi
+        security delete-generic-password -a "$account" -s "$SECRET_NAME" > /dev/null 2>&1 || true
+    fi
+
+    read -rsp "  Paste token: " token
+    echo ""
+
+    if [[ -z "$token" ]]; then
+        echo "  Empty token, skipped."
+        return 0
+    fi
+
+    security add-generic-password -a "$account" -s "$SECRET_NAME" -w "$token"
+    echo "  Stored."
+}
+
 # --- Write detection ---
 
 # Determine if an op command requires write access.

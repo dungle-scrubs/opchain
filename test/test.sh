@@ -410,6 +410,61 @@ EOF
     rm -rf "$tmpdir"
 }
 
+test_setup_single_account() {
+    echo "==> setup_single_account"
+
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    local stored_account="" stored_service="" stored_token=""
+
+    # Mock security commands
+    security() {
+        case "$1" in
+            find-generic-password)
+                return 1  # not found
+                ;;
+            add-generic-password)
+                # Parse: -a account -s service -w token
+                shift
+                while [[ $# -gt 0 ]]; do
+                    case "$1" in
+                        -a) stored_account="$2"; shift 2 ;;
+                        -s) stored_service="$2"; shift 2 ;;
+                        -w) stored_token="$2"; shift 2 ;;
+                        *) shift ;;
+                    esac
+                done
+                ;;
+        esac
+    }
+
+    # Mock read to provide a token
+    read() {
+        # The -rsp variant sets the variable (last arg)
+        local varname="${!#}"
+        eval "$varname=mock-token-value"
+    }
+
+    setup_single_account "tool-proxy-read"
+
+    assert_eq "stores to correct account" "tool-proxy-read" "$stored_account"
+    assert_eq "uses SECRET_NAME service" "$SECRET_NAME" "$stored_service"
+    assert_eq "stores provided token" "mock-token-value" "$stored_token"
+
+    # Test skip on empty token
+    stored_account=""
+    read() {
+        local varname="${!#}"
+        eval "$varname="
+    }
+
+    setup_single_account "empty-test"
+    assert_eq "empty token not stored" "" "$stored_account"
+
+    unset -f security read
+    rm -rf "$tmpdir"
+}
+
 test_cli_flags() {
     echo "==> CLI flags"
     local opchain="$SCRIPT_DIR/opchain"
@@ -524,6 +579,7 @@ test_seq_empty_array_safety
 test_handle_op_expires
 test_resolve_token
 test_secrets_inspect
+test_setup_single_account
 test_cli_flags
 
 echo ""

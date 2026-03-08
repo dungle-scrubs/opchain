@@ -24,6 +24,7 @@ COMMANDS:
     expires add <ref>        Track an op:// item for expiry monitoring
     expires remove <ref>     Stop tracking an item
     setup                    Store read/write tokens in Keychain
+    setup <account>          Store a single token for a named account
 
 FLAGS:
     --read       Force read-only token
@@ -50,6 +51,7 @@ EXAMPLES:
     opchain --write op vault list
     opchain secrets validate
     opchain expires
+    opchain setup tool-proxy-read
     opchain expires add op://Dev/api-key
 
 CONFIG:
