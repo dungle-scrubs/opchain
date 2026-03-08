@@ -485,6 +485,28 @@ test_edit_positional_arg_extraction() {
     rm -rf "$tmpdir"
 }
 
+test_write_detection_extended() {
+    echo "==> is_write_command (extended)"
+    # user subcommand
+    assert_exit "op user provision → write" 0 is_write_command op user provision
+    assert_exit "op user confirm → write" 0 is_write_command op user confirm
+    assert_exit "op user edit → write" 0 is_write_command op user edit
+    assert_exit "op user delete → write" 0 is_write_command op user delete
+    assert_exit "op user suspend → write" 0 is_write_command op user suspend
+    assert_exit "op user reactivate → write" 0 is_write_command op user reactivate
+    assert_exit "op user list → read" 1 is_write_command op user list
+    assert_exit "op user get → read" 1 is_write_command op user get
+    # connect subcommand
+    assert_exit "op connect server → write" 0 is_write_command op connect server
+    assert_exit "op connect token → write" 0 is_write_command op connect token
+    assert_exit "op connect list → read" 1 is_write_command op connect list
+    # item-specific: share and move only on item
+    assert_exit "op vault share → read" 1 is_write_command op vault share
+    assert_exit "op vault move → read" 1 is_write_command op vault move
+    assert_exit "op item share → write" 0 is_write_command op item share
+    assert_exit "op item move → write" 0 is_write_command op item move
+}
+
 test_setup_single_account() {
     echo "==> setup_single_account"
 
@@ -655,6 +677,7 @@ test_handle_op_expires
 test_handle_op_expires_equals_syntax
 test_edit_positional_arg_extraction
 test_resolve_token
+test_write_detection_extended
 test_secrets_inspect
 test_setup_single_account
 test_cli_flags

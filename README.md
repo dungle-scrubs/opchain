@@ -207,10 +207,12 @@ These `op` subcommand + action pairs trigger the write token:
 
 | Subcommand | Actions |
 |------------|---------|
-| `item` | `create`, `edit`, `delete`, `share` |
+| `item` | `create`, `edit`, `delete`, `share`, `move` |
 | `vault` | `create`, `edit`, `delete` |
 | `document` | `create`, `edit`, `delete` |
 | `group` | `create`, `edit`, `delete` |
+| `user` | `provision`, `confirm`, `edit`, `delete`, `suspend`, `reactivate` |
+| `connect` | `server`, `token` (any action on these sub-resources) |
 
 Everything else uses the read token. Non-`op` commands always use read.
 

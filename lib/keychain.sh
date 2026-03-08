@@ -101,9 +101,25 @@ is_write_command() {
     local action="${3:-}"
 
     case "$subcommand" in
-        item|vault|document|group)
+        item)
             case "$action" in
                 create|edit|delete|share|move) return 0 ;;
+            esac
+            ;;
+        vault|document|group)
+            case "$action" in
+                create|edit|delete) return 0 ;;
+            esac
+            ;;
+        user)
+            case "$action" in
+                provision|confirm|edit|delete|suspend|reactivate) return 0 ;;
+            esac
+            ;;
+        connect)
+            # op connect server/token create/edit/delete
+            case "$action" in
+                server|token) return 0 ;;
             esac
             ;;
     esac
