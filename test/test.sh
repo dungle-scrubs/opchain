@@ -66,7 +66,7 @@ test_write_detection() {
     assert_exit "op item get → read" 1 is_write_command op item get
     assert_exit "op item list → read" 1 is_write_command op item list
     assert_exit "op vault list → read" 1 is_write_command op vault list
-    assert_exit "non-op command → read" 1 is_write_command varlock run
+    assert_exit "non-op command → read" 1 is_write_command env run
     assert_exit "empty → read" 1 is_write_command
 }
 
@@ -410,6 +410,196 @@ EOF
     rm -rf "$tmpdir"
 }
 
+test_handle_op_expires_equals_syntax() {
+    echo "==> handle_op_expires --expires=DATE syntax"
+
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    local old_config_dir="$CONFIG_DIR"
+    local old_expires="$EXPIRES_FILE"
+    CONFIG_DIR="$tmpdir"
+    EXPIRES_FILE="$tmpdir/expires"
+
+    # Mock op: capture args to file
+    op() { printf '%s\n' "$@" > "$tmpdir/captured_args"; return 0; }
+
+    # Test: --expires=DATE stripped and converted to field syntax
+    (handle_op_expires op item create --vault Dev --title "eq-key" --expires=2026-06-15) 2>/dev/null || true
+    grep -q 'expires\[date\]=2026-06-15' "$tmpdir/captured_args"
+    assert_eq "=syntax converts to field" "0" "$?"
+    ! grep -q '^--expires' "$tmpdir/captured_args"
+    assert_eq "=syntax strips --expires" "0" "$?"
+
+    # Test: expiry tracking works with =syntax
+    [[ -f "$tmpdir/expires" ]] && grep -q 'op://Dev/eq-key' "$tmpdir/expires"
+    assert_eq "=syntax tracks item" "0" "$?"
+
+    # Test: invalid date rejected with =syntax
+    local err
+    err=$( (handle_op_expires op item create --vault Dev --title "x" --expires=bad-date) 2>&1 ) || true
+    echo "$err" | grep -q "invalid date"
+    assert_eq "=syntax rejects invalid date" "0" "$?"
+
+    # Cleanup
+    unset -f op
+    CONFIG_DIR="$old_config_dir"
+    EXPIRES_FILE="$old_expires"
+    rm -rf "$tmpdir"
+}
+
+test_edit_positional_arg_extraction() {
+    echo "==> edit positional arg with --flag=value"
+
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    local old_config_dir="$CONFIG_DIR"
+    local old_expires="$EXPIRES_FILE"
+    CONFIG_DIR="$tmpdir"
+    EXPIRES_FILE="$tmpdir/expires"
+
+    # Mock op
+    op() { printf '%s\n' "$@" > "$tmpdir/captured_args"; return 0; }
+
+    # Test: --vault=Dev style doesn't break positional arg extraction
+    rm -f "$tmpdir/expires"
+    (handle_op_expires op item edit --vault=Dev myitem --expires 2026-06-15) 2>/dev/null || true
+    [[ -f "$tmpdir/expires" ]] && grep -q 'op://Dev/myitem' "$tmpdir/expires"
+    assert_eq "=style vault finds positional item" "0" "$?"
+
+    # Test: multiple --flag=value before positional arg
+    rm -f "$tmpdir/expires"
+    (handle_op_expires op item edit --vault=Prod --format=json myedit --expires 2026-06-15) 2>/dev/null || true
+    [[ -f "$tmpdir/expires" ]] && grep -q 'op://Prod/myedit' "$tmpdir/expires"
+    assert_eq "multiple =style flags find positional" "0" "$?"
+
+    # Test: mixed --flag value and --flag=value
+    rm -f "$tmpdir/expires"
+    (handle_op_expires op item edit --vault Staging --format=json editme --expires 2026-06-15) 2>/dev/null || true
+    [[ -f "$tmpdir/expires" ]] && grep -q 'op://Staging/editme' "$tmpdir/expires"
+    assert_eq "mixed flag styles find positional" "0" "$?"
+
+    # Cleanup
+    unset -f op
+    CONFIG_DIR="$old_config_dir"
+    EXPIRES_FILE="$old_expires"
+    rm -rf "$tmpdir"
+}
+
+test_parse_llm_response() {
+    echo "==> parse_llm_response"
+
+    # Valid response
+    local valid_raw
+    valid_raw=$(cat <<'JSON'
+{"choices":[{"message":{"content":"{\"category\":\"Login\",\"note\":\"A login item\",\"fields\":[{\"name\":\"username\",\"type\":\"text\",\"hint\":\"username\"}]}"}}]}
+JSON
+)
+    local result
+    result=$(parse_llm_response "$valid_raw")
+    assert_eq "valid response parses" "0" "$?"
+    echo "$result" | jq -e '.category == "Login"' > /dev/null 2>&1
+    assert_eq "category extracted" "0" "$?"
+
+    # Invalid category (not in whitelist)
+    local bad_cat_raw
+    bad_cat_raw=$(cat <<'JSON'
+{"choices":[{"message":{"content":"{\"category\":\"Nonexistent Category\",\"fields\":[]}"}}]}
+JSON
+)
+    assert_exit "invalid category rejected" 1 parse_llm_response "$bad_cat_raw"
+
+    # Markdown-fenced response
+    local fenced_raw
+    fenced_raw=$(printf '{"choices":[{"message":{"content":"```json\\n{\\"category\\":\\"Login\\",\\"fields\\":[]}\\n```"}}]}')
+    result=$(parse_llm_response "$fenced_raw" 2>/dev/null)
+    assert_eq "fenced response parses" "0" "$?"
+
+    # Empty response
+    assert_exit "empty response rejected" 1 parse_llm_response ""
+
+    # Malformed JSON
+    local bad_json_raw
+    bad_json_raw='{"choices":[{"message":{"content":"not json at all"}}]}'
+    assert_exit "malformed JSON rejected" 1 parse_llm_response "$bad_json_raw"
+}
+
+test_write_detection_extended() {
+    echo "==> is_write_command (extended)"
+    # user subcommand
+    assert_exit "op user provision → write" 0 is_write_command op user provision
+    assert_exit "op user confirm → write" 0 is_write_command op user confirm
+    assert_exit "op user edit → write" 0 is_write_command op user edit
+    assert_exit "op user delete → write" 0 is_write_command op user delete
+    assert_exit "op user suspend → write" 0 is_write_command op user suspend
+    assert_exit "op user reactivate → write" 0 is_write_command op user reactivate
+    assert_exit "op user list → read" 1 is_write_command op user list
+    assert_exit "op user get → read" 1 is_write_command op user get
+    # connect subcommand
+    assert_exit "op connect server → write" 0 is_write_command op connect server
+    assert_exit "op connect token → write" 0 is_write_command op connect token
+    assert_exit "op connect list → read" 1 is_write_command op connect list
+    # item-specific: share and move only on item
+    assert_exit "op vault share → read" 1 is_write_command op vault share
+    assert_exit "op vault move → read" 1 is_write_command op vault move
+    assert_exit "op item share → write" 0 is_write_command op item share
+    assert_exit "op item move → write" 0 is_write_command op item move
+}
+
+test_setup_single_account() {
+    echo "==> setup_single_account"
+
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    local stored_account="" stored_service="" stored_token=""
+
+    # Mock security commands
+    security() {
+        case "$1" in
+            find-generic-password)
+                return 1  # not found
+                ;;
+            add-generic-password)
+                # Parse: -a account -s service -w token
+                shift
+                while [[ $# -gt 0 ]]; do
+                    case "$1" in
+                        -a) stored_account="$2"; shift 2 ;;
+                        -s) stored_service="$2"; shift 2 ;;
+                        -w) stored_token="$2"; shift 2 ;;
+                        *) shift ;;
+                    esac
+                done
+                ;;
+        esac
+    }
+
+    # Mock read to provide a token
+    read() {
+        # The -rsp variant sets the variable (last arg)
+        local varname="${!#}"
+        eval "$varname=mock-token-value"
+    }
+
+    setup_single_account "tool-proxy-read"
+
+    assert_eq "stores to correct account" "tool-proxy-read" "$stored_account"
+    assert_eq "uses SECRET_NAME service" "$SECRET_NAME" "$stored_service"
+    assert_eq "stores provided token" "mock-token-value" "$stored_token"
+
+    # Test skip on empty token
+    stored_account=""
+    read() {
+        local varname="${!#}"
+        eval "$varname="
+    }
+
+    setup_single_account "empty-test"
+    assert_eq "empty token not stored" "" "$stored_account"
+
+    unset -f security read
+    rm -rf "$tmpdir"
+}
+
 test_cli_flags() {
     echo "==> CLI flags"
     local opchain="$SCRIPT_DIR/opchain"
@@ -497,7 +687,7 @@ test_resolve_token() {
     assert_eq "explicit write" "mock-write-token" "$(resolve_token write op item create)"
     assert_eq "auto read" "mock-read-token" "$(resolve_token auto op vault list)"
     assert_eq "auto write" "mock-write-token" "$(resolve_token auto op item create)"
-    assert_eq "auto non-op" "mock-read-token" "$(resolve_token auto varlock run)"
+    assert_eq "auto non-op" "mock-read-token" "$(resolve_token auto env run)"
 
     # Restore real fetch_token
     # shellcheck source=../lib/keychain.sh
@@ -522,8 +712,13 @@ test_expires_threshold_validation
 test_expires_file_permissions
 test_seq_empty_array_safety
 test_handle_op_expires
+test_handle_op_expires_equals_syntax
+test_edit_positional_arg_extraction
 test_resolve_token
+test_write_detection_extended
+test_parse_llm_response
 test_secrets_inspect
+test_setup_single_account
 test_cli_flags
 
 echo ""

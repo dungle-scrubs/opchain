@@ -79,7 +79,13 @@ handle_op_expires() {
             skip_next=0
             continue
         fi
-        if [[ "${all_args[$i]}" == "--expires" ]]; then
+        if [[ "${all_args[$i]}" == --expires=* ]]; then
+            expires_date="${all_args[$i]#--expires=}"
+            if ! validate_date "$expires_date"; then
+                echo "Error: invalid date '$expires_date' (expected YYYY-MM-DD)" >&2
+                exit 1
+            fi
+        elif [[ "${all_args[$i]}" == "--expires" ]]; then
             local next=$((i + 1))
             if [[ $next -ge ${#all_args[@]} ]]; then
                 echo "Error: --expires requires a YYYY-MM-DD date" >&2
@@ -130,9 +136,10 @@ handle_op_expires() {
         if [[ "$action" == "edit" && -z "$title" ]]; then
             for ((k = 3; k < ${#new_args[@]}; k++)); do
                 case "${new_args[$k]}" in
-                    --*)  k=$((k + 1)); continue ;;
-                    *=*)  continue ;;
-                    *)    title="${new_args[$k]}"; break ;;
+                    --*=*) continue ;;           # --flag=value: single arg
+                    --*)   k=$((k + 1)); continue ;; # --flag value: skip next
+                    *=*)   continue ;;           # field[type]=value
+                    *)     title="${new_args[$k]}"; break ;;
                 esac
             done
         fi

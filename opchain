@@ -41,7 +41,14 @@ source "$SCRIPT_DIR/lib/help.sh"
 # --- Setup ---
 
 # Interactive dual-token Keychain setup with optional LLM key.
+# When called with an account name, stores a single token for that account.
+# @param $1 - (optional) keychain account name for single-account mode
 setup_interactive() {
+    if [[ $# -gt 0 ]]; then
+        setup_single_account "$1"
+        return 0
+    fi
+
     echo "opchain setup — store dual tokens in macOS Keychain"
     echo ""
 
@@ -134,7 +141,7 @@ main() {
         create)  shift; handle_create "$@"; exit 0 ;;
         secrets) shift; handle_secrets "$@"; exit 0 ;;
         expires) shift; handle_expires "$@"; exit 0 ;;
-        setup)   setup_interactive; exit 0 ;;
+        setup)   shift; setup_interactive "$@"; exit 0 ;;
     esac
 
     [[ $# -eq 0 ]] && { echo "Usage: opchain [--read|--write] <command> [args...]" >&2; exit 1; }
@@ -162,7 +169,7 @@ main() {
        [[ "${3:-}" == "create" || "${3:-}" == "edit" ]]; then
         local arg
         for arg in "$@"; do
-            if [[ "$arg" == "--expires" ]]; then
+            if [[ "$arg" == "--expires" || "$arg" == --expires=* ]]; then
                 handle_op_expires "$@"
             fi
         done
