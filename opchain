@@ -169,7 +169,7 @@ main() {
        [[ "${3:-}" == "create" || "${3:-}" == "edit" ]]; then
         local arg
         for arg in "$@"; do
-            if [[ "$arg" == "--expires" ]]; then
+            if [[ "$arg" == "--expires" || "$arg" == --expires=* ]]; then
                 handle_op_expires "$@"
             fi
         done

@@ -410,6 +410,81 @@ EOF
     rm -rf "$tmpdir"
 }
 
+test_handle_op_expires_equals_syntax() {
+    echo "==> handle_op_expires --expires=DATE syntax"
+
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    local old_config_dir="$CONFIG_DIR"
+    local old_expires="$EXPIRES_FILE"
+    CONFIG_DIR="$tmpdir"
+    EXPIRES_FILE="$tmpdir/expires"
+
+    # Mock op: capture args to file
+    op() { printf '%s\n' "$@" > "$tmpdir/captured_args"; return 0; }
+
+    # Test: --expires=DATE stripped and converted to field syntax
+    (handle_op_expires op item create --vault Dev --title "eq-key" --expires=2026-06-15) 2>/dev/null || true
+    grep -q 'expires\[date\]=2026-06-15' "$tmpdir/captured_args"
+    assert_eq "=syntax converts to field" "0" "$?"
+    ! grep -q '^--expires' "$tmpdir/captured_args"
+    assert_eq "=syntax strips --expires" "0" "$?"
+
+    # Test: expiry tracking works with =syntax
+    [[ -f "$tmpdir/expires" ]] && grep -q 'op://Dev/eq-key' "$tmpdir/expires"
+    assert_eq "=syntax tracks item" "0" "$?"
+
+    # Test: invalid date rejected with =syntax
+    local err
+    err=$( (handle_op_expires op item create --vault Dev --title "x" --expires=bad-date) 2>&1 ) || true
+    echo "$err" | grep -q "invalid date"
+    assert_eq "=syntax rejects invalid date" "0" "$?"
+
+    # Cleanup
+    unset -f op
+    CONFIG_DIR="$old_config_dir"
+    EXPIRES_FILE="$old_expires"
+    rm -rf "$tmpdir"
+}
+
+test_edit_positional_arg_extraction() {
+    echo "==> edit positional arg with --flag=value"
+
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    local old_config_dir="$CONFIG_DIR"
+    local old_expires="$EXPIRES_FILE"
+    CONFIG_DIR="$tmpdir"
+    EXPIRES_FILE="$tmpdir/expires"
+
+    # Mock op
+    op() { printf '%s\n' "$@" > "$tmpdir/captured_args"; return 0; }
+
+    # Test: --vault=Dev style doesn't break positional arg extraction
+    rm -f "$tmpdir/expires"
+    (handle_op_expires op item edit --vault=Dev myitem --expires 2026-06-15) 2>/dev/null || true
+    [[ -f "$tmpdir/expires" ]] && grep -q 'op://Dev/myitem' "$tmpdir/expires"
+    assert_eq "=style vault finds positional item" "0" "$?"
+
+    # Test: multiple --flag=value before positional arg
+    rm -f "$tmpdir/expires"
+    (handle_op_expires op item edit --vault=Prod --format=json myedit --expires 2026-06-15) 2>/dev/null || true
+    [[ -f "$tmpdir/expires" ]] && grep -q 'op://Prod/myedit' "$tmpdir/expires"
+    assert_eq "multiple =style flags find positional" "0" "$?"
+
+    # Test: mixed --flag value and --flag=value
+    rm -f "$tmpdir/expires"
+    (handle_op_expires op item edit --vault Staging --format=json editme --expires 2026-06-15) 2>/dev/null || true
+    [[ -f "$tmpdir/expires" ]] && grep -q 'op://Staging/editme' "$tmpdir/expires"
+    assert_eq "mixed flag styles find positional" "0" "$?"
+
+    # Cleanup
+    unset -f op
+    CONFIG_DIR="$old_config_dir"
+    EXPIRES_FILE="$old_expires"
+    rm -rf "$tmpdir"
+}
+
 test_setup_single_account() {
     echo "==> setup_single_account"
 
@@ -577,6 +652,8 @@ test_expires_threshold_validation
 test_expires_file_permissions
 test_seq_empty_array_safety
 test_handle_op_expires
+test_handle_op_expires_equals_syntax
+test_edit_positional_arg_extraction
 test_resolve_token
 test_secrets_inspect
 test_setup_single_account
