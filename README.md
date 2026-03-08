@@ -33,7 +33,13 @@ This prompts for a **read-only** and **read-write** 1Password service account to
 
 Setup also offers to configure an **OpenRouter API key** for LLM-assisted item creation (`opchain create`). This is optional — without it, `create` falls back to manual selection prompts. Get a key at [openrouter.ai/keys](https://openrouter.ai/keys).
 
-Set each keychain item to "Allow all applications" access to avoid biometric prompts during automation.
+Keep the default Keychain access controls. Do **not** switch items to "Allow all applications".
+
+If you need unattended automation, the safe option is a dedicated helper binary with explicit Keychain access. With the current shell-script + `/usr/bin/security` design, you cannot meaningfully scope access to `opchain` itself — trusting `/usr/bin/security` would also trust every other script that invokes it.
+
+A local helper scaffold and signing guide live at [`docs/keychain-helper.md`](docs/keychain-helper.md). Once built and signed, point `OPCHAIN_KEYCHAIN_HELPER` or `keychain_helper` at the binary to make opchain use it for service-account token access across top-level commands and most internal `op` calls.
+
+Run `opchain doctor` after wiring the helper. It verifies the configured path, reports symlink/realpath and `codesign` identity details, checks read/write helper access, and reminds you that Keychain trusted-app bindings still require a manual check in Keychain Access. Use `opchain doctor --json` if you want machine-readable output.
 
 ## Usage
 
@@ -42,7 +48,7 @@ Set each keychain item to "Allow all applications" access to avoid biometric pro
 opchain automatically picks the least-privilege token:
 
 ```bash
-# Read token (default for reads and non-op commands)
+# Read token (default for read-only op commands)
 opchain op vault list
 opchain op item get --vault Dev "api-key"
 opchain op run --env-file=.env.op -- ./start.sh
@@ -75,10 +81,10 @@ opchain op item edit "api-key" --vault Dev --expires 2026-12-31
 
 ### LLM-assisted item creation
 
-Create 1Password items interactively with optional LLM suggestions for vault, category, and fields:
+Create 1Password items interactively with optional LLM suggestions for category and fields:
 
 ```bash
-# LLM suggests vault, category, and fields based on the title
+# LLM suggests category and fields based on the title
 opchain create "Stripe API Key"
 
 # Skip LLM, specify vault and category directly
@@ -92,7 +98,7 @@ When an OpenRouter API key is configured (via `opchain setup`), the LLM analyzes
 - The appropriate category (from 1Password's built-in types)
 - Relevant fields with appropriate types (concealed for secrets, url for endpoints, etc.)
 
-The LLM only sees the item title and category list — **never secret values or vault names**. Without an LLM key configured, opchain falls back to numbered selection prompts.
+The LLM only sees the item title and category list — **never secret values or vault names**. Responses are structurally validated before use: category must match a real 1Password category, field types must be in the allowed set, and unsafe field names are rejected. Without an LLM key configured, opchain falls back to numbered selection prompts.
 
 ### Token expiry tracking
 
@@ -102,24 +108,26 @@ Track items with expiration dates and check their status:
 # List tracked items with expiry status
 opchain expires
 
-# Manually track an item
-opchain expires add op://Dev/api-key
+# Manually track an item (item UUID is safest)
+opchain expires add op://Dev/item-id
 
 # Stop tracking
-opchain expires remove op://Dev/api-key
+opchain expires remove op://Dev/item-id
 ```
+
+Auto-tracked items are stored as structured records containing the vault, stable item ID, and a cached title. That avoids breakage when titles contain path-like characters and avoids an extra metadata lookup just to render `opchain expires` output.
 
 Output shows status based on the configured threshold (default: 14 days):
 
 ```
 ==> Tracked Items
-  OK       op://Dev/api-key (2026-06-15, 138 days)
-  EXPIRING op://Admin/service-token (2026-02-10, 13 days)
-  EXPIRED  op://Prod/old-key (2026-01-15, 13 days ago)
-  FAIL     op://Dev/missing-item (could not read)
+  OK       API Key [op://Dev/item-id] (2026-06-15, 138 days)
+  EXPIRING Service Token [op://Admin/item-id] (2026-02-10, 13 days)
+  EXPIRED  Old Key [op://Prod/item-id] (2026-01-15, 13 days ago)
+  FAIL     op://Dev/item-id (could not read)
 ```
 
-Expiry warnings also appear after `opchain secrets validate` when items are expiring or expired.
+Expiry warnings also appear after `opchain secrets validate` when items are expiring or expired, even if some secret references fail validation.
 
 ### Force a specific token
 
@@ -127,6 +135,19 @@ Expiry warnings also appear after `opchain secrets validate` when items are expi
 opchain --read op vault list       # force read token
 opchain --write op vault list      # force write token
 ```
+
+By default, `opchain` only wraps `op ...` commands. It will not inject a token into arbitrary processes.
+
+If you need that behavior, use the explicit `exec` subcommand:
+
+```bash
+opchain exec --read -- env
+opchain exec --write --confirm-write -- ./script-that-needs-a-token
+opchain doctor
+opchain doctor --json
+```
+
+`--confirm-write` is intentionally required for write-token exec. If you are exporting a write-capable 1Password token into another process, you should have to say so explicitly.
 
 ### Secrets management
 
@@ -214,7 +235,7 @@ These `op` subcommand + action pairs trigger the write token:
 | `user` | `provision`, `confirm`, `edit`, `delete`, `suspend`, `reactivate` |
 | `connect` | `server`, `token` (any action on these sub-resources) |
 
-Everything else uses the read token. Non-`op` commands always use read.
+Everything else uses the read token. Non-`op` commands are rejected by default unless you use `opchain exec` explicitly.
 
 ## Configuration
 
@@ -226,6 +247,7 @@ Everything else uses the read token. Non-`op` commands always use read.
 projects_dir=~/dev
 read_account=opchain-read
 write_account=opchain-write
+keychain_helper=~/bin/opchain-keychain-helper
 ```
 
 ### Environment variables
@@ -240,6 +262,7 @@ Environment variables override the config file, which overrides defaults.
 | `OPCHAIN_EXPIRES_THRESHOLD` | Days before expiry to warn | `14` |
 | `OPCHAIN_LLM_ACCOUNT` | Keychain account for OpenRouter API key | `opchain-llm` |
 | `OPCHAIN_LLM_MODEL` | LLM model for create suggestions | `anthropic/claude-3.5-haiku` |
+| `OPCHAIN_KEYCHAIN_HELPER` | Optional helper binary for trusted-binary Keychain access | unset |
 
 ## Uninstall
 

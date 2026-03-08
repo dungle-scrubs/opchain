@@ -10,20 +10,27 @@
 1. Fork the repository
 2. Create a feature branch
 3. Make your changes
-4. Run `just check` (lint + tests)
+4. Run `just check` locally (lint + tests)
 5. Commit and push
 6. Open a Pull Request
+
+`main` is intended to stay protected: no direct pushes, no deletion, and all
+merges should go through a PR.
 
 ## Available Commands
 
 ```bash
 just          # list all recipes
 just lint     # shellcheck all scripts
-just test     # run local test suite
+just test     # run local test suite (macOS only)
 just check    # lint + test
 just install  # install opchain via symlink
 just uninstall
 ```
+
+GitHub Actions intentionally stays on Ubuntu runners only. CI covers secrets,
+lint, install smoke checks, and CodeQL. The full shell test suite remains a
+local macOS responsibility.
 
 ## Code Style
 
@@ -64,6 +71,6 @@ This project uses [Conventional Commits](https://www.conventionalcommits.org/) f
 
 Releases are automated via [release-please](https://github.com/googleapis/release-please):
 
-1. Push to `main` with conventional commits
+1. Merge conventional commits into `main` via PR
 2. release-please opens/updates a PR bumping version + changelog
-3. Merge the PR → GitHub Release created automatically
+3. Merge the release PR → GitHub Release created automatically
