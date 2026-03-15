@@ -275,6 +275,32 @@ See `PACKAGING.md` for:
 - debug flag and JSON event notes
 - local trust and code-signing notes
 
+## Run the fixture-backed demo
+
+Use the built-in demo entrypoint when you want to see the current CLI surface
+without touching your real 1Password setup:
+
+```bash
+just demo
+```
+
+This script uses the fake helper and fake `op` binaries from `test/fixtures/`
+and creates a temporary `HOME` plus a temporary project with `.env.op` files.
+It demonstrates:
+
+- `doctor`
+- `identity list`
+- `secrets list`, `check`, `validate`, and `inspect`
+- read-safe `op` execution
+- explicit `--write` profile selection
+- `expires add`, `list`, and `scan`
+
+If you want to inspect the generated temp files after the run:
+
+```bash
+just demo-keep
+```
+
 ## Immediate next step
 
 The next real steps are:
