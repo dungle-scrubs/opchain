@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "${1:-}" == "get" && "${2:-}" == "--service" && -n "${3:-}" && "${4:-}" == "--account" && -n "${5:-}" ]]; then
+  if [[ -n "${OPCHAIN_TEST_HELPER_STDERR:-}" ]]; then
+    printf '%s\n' "$OPCHAIN_TEST_HELPER_STDERR" >&2
+    exit "${OPCHAIN_TEST_HELPER_EXIT_CODE:-1}"
+  fi
+
+  if [[ -n "${OPCHAIN_TEST_HELPER_GET_LOG:-}" ]]; then
+    {
+      printf 'service=%s\n' "$3"
+      printf 'account=%s\n' "$5"
+    } > "$OPCHAIN_TEST_HELPER_GET_LOG"
+  fi
+
+  printf '%s\n' "${OPCHAIN_TEST_HELPER_TOKEN:-}"
+  exit 0
+fi
+
+if [[ "${1:-}" == "set" && "${2:-}" == "--service" && -n "${3:-}" && "${4:-}" == "--account" && -n "${5:-}" ]]; then
+  if [[ -n "${OPCHAIN_TEST_HELPER_STDERR:-}" ]]; then
+    printf '%s\n' "$OPCHAIN_TEST_HELPER_STDERR" >&2
+    exit "${OPCHAIN_TEST_HELPER_EXIT_CODE:-1}"
+  fi
+
+  token="$(cat)"
+  if [[ -n "${OPCHAIN_TEST_HELPER_WRITE_LOG:-}" ]]; then
+    {
+      printf 'service=%s\n' "$3"
+      printf 'account=%s\n' "$5"
+      printf 'token=%s\n' "$token"
+    } > "$OPCHAIN_TEST_HELPER_WRITE_LOG"
+  fi
+
+  exit 0
+fi
+
+if [[ "${1:-}" == "remove" && "${2:-}" == "--service" && -n "${3:-}" && "${4:-}" == "--account" && -n "${5:-}" ]]; then
+  if [[ -n "${OPCHAIN_TEST_HELPER_STDERR:-}" ]]; then
+    printf '%s\n' "$OPCHAIN_TEST_HELPER_STDERR" >&2
+    exit "${OPCHAIN_TEST_HELPER_EXIT_CODE:-1}"
+  fi
+
+  if [[ -n "${OPCHAIN_TEST_HELPER_REMOVE_LOG:-}" ]]; then
+    {
+      printf 'service=%s\n' "$3"
+      printf 'account=%s\n' "$5"
+    } > "$OPCHAIN_TEST_HELPER_REMOVE_LOG"
+  fi
+
+  exit 0
+fi
+
+echo "invalid helper invocation" >&2
+exit 1

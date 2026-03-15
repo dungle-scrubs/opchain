@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "${1:-}" != "find-generic-password" || "${2:-}" != "-w" || "${3:-}" != "-s" || -z "${4:-}" || "${5:-}" != "-a" || -z "${6:-}" ]]; then
+  echo "invalid security invocation" >&2
+  exit 1
+fi
+
+if [[ -n "${OPCHAIN_TEST_SECURITY_STDERR:-}" ]]; then
+  printf '%s\n' "$OPCHAIN_TEST_SECURITY_STDERR" >&2
+  exit "${OPCHAIN_TEST_SECURITY_EXIT_CODE:-1}"
+fi
+
+printf '%s\n' "${OPCHAIN_TEST_SECURITY_TOKEN:-}"

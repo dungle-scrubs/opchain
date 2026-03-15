@@ -1,0 +1,98 @@
+# Migration from opchain v1
+
+This document covers the current v1 to v2 migration behavior.
+
+## Current status
+
+Implemented now:
+
+- `opchain migrate-v1 --dry-run`
+- `opchain migrate-v1`
+
+Both commands look for legacy inputs at:
+
+- `~/.config/opchain/config`
+- `~/.config/opchain/expires`
+
+## What dry-run does
+
+`opchain migrate-v1 --dry-run` does not write anything.
+
+It reports:
+
+- detected legacy config path
+- detected legacy expires path
+- read-account to `kevin.read` mapping
+- write-account to `kevin.write` mapping
+- planned `projects_dir` import
+- planned `expires_threshold_days` import
+- legacy expiry records resolved into canonical v2 vault and item UUIDs when
+  helper and `op` access are available
+- explicit reasons when expiry import cannot proceed yet, such as missing
+  legacy `read_account`, token resolution failure, or unresolved item metadata
+
+If legacy expiry records cannot be resolved during dry-run, the output stays
+explicit and non-destructive.
+
+## What apply does
+
+`opchain migrate-v1` writes:
+
+- `~/.config/opchain-v2/config.toml`
+- `~/.config/opchain-v2/state/expires/kevin.json`
+
+The current apply path is intentionally narrow:
+
+- imports the personal-machine `kevin` read/write mapping
+- imports legacy expiry records into canonical v2 IDs only after every legacy
+  record resolves cleanly
+- writes v2 config for the current documented personal-machine setup
+- writes `state/expires/kevin.json` even when the imported expiry set is empty
+
+If any legacy expiry record cannot be resolved, apply mode fails before writing
+v2 files.
+
+## Apply guard
+
+Apply mode is guarded.
+
+It fails instead of overwriting when either target already exists:
+
+- `~/.config/opchain-v2/config.toml`
+- `~/.config/opchain-v2/state/expires/kevin.json`
+
+That guard exists to stop silent data loss and sloppy repeated migrations.
+
+## Imported values
+
+Current config import covers:
+
+- legacy `projects_dir`
+- legacy `expires_threshold`
+- legacy `read_account`
+- legacy `write_account`
+
+Current expiry import covers:
+
+- legacy expires records from the v1 expires file
+- canonical `vaultUuid` and `itemUuid`
+- cached titles updated from current `op item get --format json` metadata
+
+## Not done yet
+
+Still missing:
+
+- apply telemetry events documented for operators
+- broader identity migration beyond the current `kevin` mapping
+- richer conflict handling than the current fail-fast guard
+- migration docs integrated into the install and release flow
+
+## Recommended workflow
+
+```bash
+opchain migrate-v1 --dry-run
+opchain migrate-v1
+opchain doctor
+opchain kevin op vault list
+opchain kevin expires list
+```
