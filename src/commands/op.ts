@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 
 import { createTelemetryEvent } from "../telemetry/event.ts";
 
+import { parseIdentityCommandPath } from "../cli/command-args.ts";
 import { loadConfigContext } from "../cli/config-context.ts";
 import type { CliOptions } from "../cli/options.ts";
 import { resolveOpPath } from "../cli/paths.ts";
@@ -16,14 +17,15 @@ import { resolveTokenForAccount } from "../cli/token-context.ts";
  * @returns {Promise<number>} Process exit code.
  */
 export async function runIdentityOp(options: CliOptions): Promise<number> {
-  const identityName = options.commandArgs[0];
-  const opArgs = options.commandArgs.slice(2);
-  const classification = classifyOpCommand(opArgs);
-
-  if (identityName === undefined) {
-    process.stderr.write("Missing identity before op command.\n");
+  const parsedArgs = parseIdentityCommandPath(options.commandArgs, ["op"]);
+  if (!parsedArgs.ok) {
+    process.stderr.write(`${parsedArgs.error}\n`);
     return 1;
   }
+
+  const { identityName } = parsedArgs;
+  const opArgs = parsedArgs.trailingArgs;
+  const classification = classifyOpCommand(opArgs);
 
   if (
     classification === null &&

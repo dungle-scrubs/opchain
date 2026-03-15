@@ -1,5 +1,6 @@
 import { listSecretReferences } from "../secrets/parse-env-op.ts";
 
+import { parseIdentityCommandPath } from "../cli/command-args.ts";
 import { readTextFile } from "../cli/io.ts";
 import { loadConfigContext } from "../cli/config-context.ts";
 import type { CliOptions } from "../cli/options.ts";
@@ -11,13 +12,17 @@ import type { CliOptions } from "../cli/options.ts";
  * @returns {Promise<number>} Process exit code.
  */
 export async function runSecretsList(options: CliOptions): Promise<number> {
-  const identityName = options.commandArgs[0];
-  const targetPath = options.commandArgs[3];
-
-  if (identityName === undefined) {
-    process.stderr.write("Missing identity before secrets command.\n");
+  const parsedArgs = parseIdentityCommandPath(options.commandArgs, [
+    "secrets",
+    "list",
+  ]);
+  if (!parsedArgs.ok) {
+    process.stderr.write(`${parsedArgs.error}\n`);
     return 1;
   }
+
+  const { identityName } = parsedArgs;
+  const [targetPath] = parsedArgs.trailingArgs;
 
   if (targetPath === undefined) {
     process.stderr.write(

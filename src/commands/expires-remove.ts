@@ -1,5 +1,6 @@
 import { removeExpiryTrackedItem } from "../expires/state.ts";
 
+import { parseIdentityCommandPath } from "../cli/command-args.ts";
 import { loadExpiryStateResult, saveExpiryStateResult } from "../cli/io.ts";
 import type { CliOptions } from "../cli/options.ts";
 import { resolveExpiryStatePath } from "../cli/paths.ts";
@@ -11,13 +12,17 @@ import { resolveExpiryStatePath } from "../cli/paths.ts";
  * @returns {Promise<number>} Process exit code.
  */
 export async function runExpiresRemove(options: CliOptions): Promise<number> {
-  const identityName = options.commandArgs[0];
-  const removalTarget = options.commandArgs[3];
-
-  if (identityName === undefined) {
-    process.stderr.write("Missing identity before expires command.\n");
+  const parsedArgs = parseIdentityCommandPath(options.commandArgs, [
+    "expires",
+    "remove",
+  ]);
+  if (!parsedArgs.ok) {
+    process.stderr.write(`${parsedArgs.error}\n`);
     return 1;
   }
+
+  const { identityName } = parsedArgs;
+  const [removalTarget] = parsedArgs.trailingArgs;
 
   if (removalTarget === undefined || !removalTarget.includes("/")) {
     process.stderr.write(

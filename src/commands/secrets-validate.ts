@@ -6,6 +6,8 @@ import {
 } from "../secrets/reference-validation.ts";
 import { createTelemetryEvent } from "../telemetry/event.ts";
 
+import { parseIdentityCommandPath } from "../cli/command-args.ts";
+import { parseFlagArguments } from "../cli/flag-args.ts";
 import { formatRuntimeError, readTextFile } from "../cli/io.ts";
 import type { CliOptions } from "../cli/options.ts";
 import { writeTelemetry } from "../cli/telemetry.ts";
@@ -16,44 +18,40 @@ type SecretsValidateOptions = {
   readonly targetPath: string | undefined;
 };
 
+const SECRETS_VALIDATE_BOOLEAN_FLAGS = new Set(["--project-wide"]);
+
 /**
- * Parses `secrets validate` command arguments.
+ * Parses trailing `secrets validate` arguments.
  *
- * @param commandArgs - Command tokens beginning with `secrets validate`.
+ * @param trailingArgs - Arguments after the `secrets validate` path.
  * @returns {SecretsValidateOptions | string} Parsed options or an error message.
  */
 function parseSecretsValidateOptions(
-  commandArgs: readonly string[],
+  trailingArgs: readonly string[],
 ): SecretsValidateOptions | string {
-  let projectWide = false;
-  let targetPath: string | undefined;
+  const parsedArgs = parseFlagArguments(trailingArgs, {
+    booleanFlags: SECRETS_VALIDATE_BOOLEAN_FLAGS,
+    valueFlags: new Set<string>(),
+  });
+  const [targetPath, extraPositional] = parsedArgs.positionals;
 
-  for (let index = 3; index < commandArgs.length; index += 1) {
-    const token = commandArgs[index];
-
-    if (token === undefined) {
-      continue;
-    }
-
-    if (token === "--project-wide") {
-      projectWide = true;
-      continue;
-    }
-
-    if (targetPath === undefined) {
-      targetPath = token;
-      continue;
-    }
-
-    return `Unknown secrets validate option: ${token}.`;
+  if (parsedArgs.unknownOptions.length > 0) {
+    return `Unknown secrets validate option: ${parsedArgs.unknownOptions[0]}.`;
   }
 
-  if (projectWide && targetPath !== undefined) {
+  if (extraPositional !== undefined) {
+    return `Unknown secrets validate option: ${extraPositional}.`;
+  }
+
+  if (
+    parsedArgs.booleanFlags.has("--project-wide") &&
+    targetPath !== undefined
+  ) {
     return "secrets validate does not allow a path together with --project-wide.";
   }
 
   return {
-    projectWide,
+    projectWide: parsedArgs.booleanFlags.has("--project-wide"),
     targetPath,
   };
 }
@@ -65,13 +63,17 @@ function parseSecretsValidateOptions(
  * @returns {Promise<number>} Process exit code.
  */
 export async function runSecretsValidate(options: CliOptions): Promise<number> {
-  const identityName = options.commandArgs[0];
-  const validateOptions = parseSecretsValidateOptions(options.commandArgs);
-
-  if (identityName === undefined) {
-    process.stderr.write("Missing identity before secrets command.\n");
+  const parsedArgs = parseIdentityCommandPath(options.commandArgs, [
+    "secrets",
+    "validate",
+  ]);
+  if (!parsedArgs.ok) {
+    process.stderr.write(`${parsedArgs.error}\n`);
     return 1;
   }
+
+  const { identityName } = parsedArgs;
+  const validateOptions = parseSecretsValidateOptions(parsedArgs.trailingArgs);
 
   if (typeof validateOptions === "string") {
     process.stderr.write(`${validateOptions}\n`);

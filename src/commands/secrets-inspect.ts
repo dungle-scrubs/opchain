@@ -2,6 +2,7 @@ import { resolveReadIdentityContext } from "../cli/token-context.ts";
 import type { CliOptions } from "../cli/options.ts";
 import { readOpItemJson } from "../op/item-json.ts";
 
+import { parseIdentityCommandPath } from "../cli/command-args.ts";
 import {
   formatSecretInspectOutput,
   parseSecretInspectMetadata,
@@ -14,13 +15,17 @@ import {
  * @returns {Promise<number>} Process exit code.
  */
 export async function runSecretsInspect(options: CliOptions): Promise<number> {
-  const identityName = options.commandArgs[0];
-  const reference = options.commandArgs[3];
-
-  if (identityName === undefined) {
-    process.stderr.write("Missing identity before secrets command.\n");
+  const parsedArgs = parseIdentityCommandPath(options.commandArgs, [
+    "secrets",
+    "inspect",
+  ]);
+  if (!parsedArgs.ok) {
+    process.stderr.write(`${parsedArgs.error}\n`);
     return 1;
   }
+
+  const { identityName } = parsedArgs;
+  const [reference] = parsedArgs.trailingArgs;
 
   if (reference === undefined) {
     process.stderr.write(

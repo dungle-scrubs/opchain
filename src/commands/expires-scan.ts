@@ -2,6 +2,7 @@ import type { ExpiryTrackedItem } from "../expires/state.ts";
 import { classifyExpiryStatus } from "../expires/status.ts";
 import { createTelemetryEvent } from "../telemetry/event.ts";
 
+import { parseIdentityCommandPath } from "../cli/command-args.ts";
 import { loadExpiryStateResult, saveExpiryStateResult } from "../cli/io.ts";
 import type { CliOptions } from "../cli/options.ts";
 import { resolveExpiryStatePath } from "../cli/paths.ts";
@@ -18,13 +19,16 @@ import { parseExpiryTrackedItem } from "./item-payload.ts";
  * @returns {Promise<number>} Process exit code.
  */
 export async function runExpiresScan(options: CliOptions): Promise<number> {
-  const identityName = options.commandArgs[0];
-
-  if (identityName === undefined) {
-    process.stderr.write("Missing identity before expires command.\n");
+  const parsedArgs = parseIdentityCommandPath(options.commandArgs, [
+    "expires",
+    "scan",
+  ]);
+  if (!parsedArgs.ok) {
+    process.stderr.write(`${parsedArgs.error}\n`);
     return 1;
   }
 
+  const { identityName } = parsedArgs;
   const identityContext = await resolveReadIdentityContext(options, identityName);
   if (!identityContext.ok) {
     process.stderr.write(`${identityContext.error}\n`);

@@ -1,5 +1,6 @@
 import { upsertExpiryTrackedItem } from "../expires/state.ts";
 
+import { parseIdentityCommandPath } from "../cli/command-args.ts";
 import { loadExpiryStateResult, saveExpiryStateResult } from "../cli/io.ts";
 import type { CliOptions } from "../cli/options.ts";
 import { resolveExpiryStatePath } from "../cli/paths.ts";
@@ -15,13 +16,17 @@ import { parseExpiryTrackedItem } from "./item-payload.ts";
  * @returns {Promise<number>} Process exit code.
  */
 export async function runExpiresAdd(options: CliOptions): Promise<number> {
-  const identityName = options.commandArgs[0];
-  const reference = options.commandArgs[3];
-
-  if (identityName === undefined) {
-    process.stderr.write("Missing identity before expires command.\n");
+  const parsedArgs = parseIdentityCommandPath(options.commandArgs, [
+    "expires",
+    "add",
+  ]);
+  if (!parsedArgs.ok) {
+    process.stderr.write(`${parsedArgs.error}\n`);
     return 1;
   }
+
+  const { identityName } = parsedArgs;
+  const [reference] = parsedArgs.trailingArgs;
 
   if (reference === undefined) {
     process.stderr.write(
