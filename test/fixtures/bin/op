@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ -n "${OPCHAIN_TEST_OP_LOG:-}" ]]; then
+  {
+    printf 'args=%s\n' "$*"
+    printf 'token=%s\n' "${OP_SERVICE_ACCOUNT_TOKEN:-}"
+  } > "$OPCHAIN_TEST_OP_LOG"
+fi
+
+if [[ "$*" == "vault list" ]]; then
+  printf 'vault list ok\n'
+  exit 0
+fi
+
+if [[ "$1" == "read" && -n "${2:-}" ]]; then
+  if [[ -n "${OPCHAIN_TEST_OP_READ_LOG:-}" ]]; then
+    printf '%s\n' "$2" >> "$OPCHAIN_TEST_OP_READ_LOG"
+  fi
+
+  if [[ -n "${OPCHAIN_TEST_OP_READ_STDERR:-}" ]]; then
+    printf '%s\n' "$OPCHAIN_TEST_OP_READ_STDERR" >&2
+    exit "${OPCHAIN_TEST_OP_READ_EXIT_CODE:-1}"
+  fi
+
+  printf 'secret ok\n'
+  exit 0
+fi
+
+if [[ "$1" == "item" && "$2" == "get" && -n "${3:-}" && "$4" == "--format" && "$5" == "json" ]]; then
+  if [[ -n "${OPCHAIN_TEST_OP_ITEM_STDERR:-}" ]]; then
+    printf '%s\n' "$OPCHAIN_TEST_OP_ITEM_STDERR" >&2
+    exit "${OPCHAIN_TEST_OP_ITEM_EXIT_CODE:-1}"
+  fi
+
+  if [[ -n "${OPCHAIN_TEST_OP_ITEM_JSON:-}" ]]; then
+    printf '%s\n' "$OPCHAIN_TEST_OP_ITEM_JSON"
+  else
+    printf '%s\n' '{"id":"item-uuid-1","reference":"op://Services/OpenAI/api-key","vault":{"id":"vault-uuid-1","name":"Services"},"title":"OpenAI","fields":[{"label":"api-key","value":"super-secret-value"},{"label":"region","value":"us-east-1"}],"expires_at":"2026-12-31T00:00:00Z"}'
+  fi
+  exit 0
+fi
+
+if [[ "$*" == "item edit Stripe --vault Services" ]]; then
+  printf 'item edit ok\n'
+  exit 0
+fi
+
+printf 'unsupported fake op command\n' >&2
+exit 1
