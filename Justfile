@@ -29,6 +29,12 @@ build:
 install-local:
     bun run install-local
 
+demo:
+    ./scripts/demo.sh
+
+demo-keep:
+    ./scripts/demo.sh --keep
+
 prepare:
     bun run prepare
 
