@@ -84,4 +84,20 @@ describe("buildProgram", () => {
     );
     expect(helpText).toContain("guidance.");
   });
+
+  test("documents identity-prefixed command shapes in help output", () => {
+    const helpText = buildProgram().helpInformation();
+
+    expect(helpText).toContain(
+      "<identity> [--profile <name>|--read|--write] [--allow-env-token] op <args...>",
+    );
+    expect(helpText).toContain("Identity-scoped commands:");
+    expect(helpText).toContain("opchain <identity> secrets <list|check|inspect|validate>");
+    expect(helpText).toContain("opchain <identity> expires <add|remove|list|scan>");
+    expect(helpText).toContain("Examples:");
+    expect(helpText).toContain("opchain human op vault list");
+    expect(helpText).toContain(
+      "opchain kevin --write op item edit Stripe --vault Services",
+    );
+  });
 });

@@ -1,84 +1,94 @@
 import { Command } from "commander";
 
+import {
+  CLI_COMMAND_DEFINITIONS,
+  type CliCommandDefinition,
+} from "./manifest.ts";
+
 /**
- * Builds the `identity` command tree.
+ * Builds the multiline root usage block from identity-scoped command metadata.
  *
- * @returns {Command} Configured identity command.
+ * @returns {string} Root usage text.
  */
-function buildIdentityCommand(): Command {
-  return new Command("identity")
-    .description("Identity commands.")
-    .addCommand(
-      new Command("list").description(
-        "List configured identities from config.toml.",
-      ),
-    );
+function buildRootUsage(): string {
+  const usageLines = CLI_COMMAND_DEFINITIONS.filter(
+    (definition) => definition.identityScoped,
+  ).map((definition) => `       ${definition.invocation ?? definition.name}`);
+
+  return ["[options] [command]", ...usageLines].join("\n");
 }
 
 /**
- * Builds the `secrets` command tree.
+ * Collects unique identity-scoped examples in manifest order.
  *
- * @returns {Command} Configured secrets command.
+ * @returns {readonly string[]} Example command lines.
  */
-function buildSecretsCommand(): Command {
-  return new Command("secrets")
-    .description("Secret-reference commands.")
-    .addCommand(
-      new Command("list").description("List `op://` refs from a .env.op file."),
-    )
-    .addCommand(
-      new Command("check").description(
-        "Validate `op://` refs from a .env.op file.",
-      ),
-    )
-    .addCommand(
-      new Command("inspect").description(
-        "Inspect metadata for one `op://` reference without printing the secret value.",
-      ),
-    )
-    .addCommand(
-      new Command("validate").description(
-        "Validate refs across one file or directory of `.env.op` files.",
-      ),
-    );
+function collectIdentityExamples(): readonly string[] {
+  const seen = new Set<string>();
+  const examples: string[] = [];
+
+  for (const definition of CLI_COMMAND_DEFINITIONS) {
+    for (const example of definition.examples ?? []) {
+      if (seen.has(example)) {
+        continue;
+      }
+
+      seen.add(example);
+      examples.push(example);
+    }
+  }
+
+  return examples;
 }
 
 /**
- * Builds the `expires` command tree.
+ * Builds the identity-scoped help appendix from shared manifest data.
  *
- * @returns {Command} Configured expires command.
+ * @returns {string} Help appendix text.
  */
-function buildExpiresCommand(): Command {
-  return new Command("expires")
-    .description("Expiry tracking commands.")
-    .addCommand(new Command("add").description("Track one expiring record."))
-    .addCommand(
-      new Command("remove").description("Remove one tracked expiring record."),
-    )
-    .addCommand(new Command("list").description("List tracked expiry records."))
-    .addCommand(
-      new Command("scan").description("Refresh tracked expiry metadata."),
-    );
+function buildIdentityHelpText(): string {
+  const commandLines = CLI_COMMAND_DEFINITIONS.filter(
+    (definition) => definition.identityScoped,
+  ).map((definition) => `  opchain ${definition.invocation ?? definition.name}`);
+  const exampleLines = collectIdentityExamples().map(
+    (example) => `  ${example}`,
+  );
+
+  return [
+    "Identity-scoped commands:",
+    ...commandLines,
+    "",
+    "Examples:",
+    ...exampleLines,
+  ].join("\n");
 }
 
 /**
- * Builds the `token` command tree.
+ * Builds one top-level Commander command from one manifest definition.
  *
- * @returns {Command} Configured token command.
+ * @param definition - Shared command definition.
+ * @returns {Command | null} Commander command or null when hidden.
  */
-function buildTokenCommand(): Command {
-  return new Command("token")
-    .description("Token commands.")
-    .addCommand(
-      new Command("set").description(
-        "Store a token for an identity/profile using --stdin or a hidden TTY prompt.",
-      ),
-    )
-    .addCommand(
-      new Command("remove").description(
-        "Remove a token for an identity/profile using --yes or interactive confirmation.",
-      ),
-    );
+function buildTopLevelCommand(
+  definition: CliCommandDefinition,
+): Command | null {
+  if (!definition.includeInTopLevel) {
+    return null;
+  }
+
+  const description = definition.identityScoped
+    ? `${definition.description} Invoke as: opchain ${definition.invocation}`
+    : definition.description;
+
+  if (definition.kind === "command") {
+    return new Command(definition.name).description(description);
+  }
+
+  return definition.children.reduce(
+    (command, child) =>
+      command.addCommand(new Command(child.name).description(child.description)),
+    new Command(definition.name).description(description),
+  );
 }
 
 /**
@@ -87,11 +97,12 @@ function buildTokenCommand(): Command {
  * @returns {Command} Configured command instance.
  */
 export function buildProgram(): Command {
-  return new Command()
+  const program = new Command()
     .name("opchain")
     .description(
       "macOS-first 1Password service-account workflows with explicit identities.",
     )
+    .usage(buildRootUsage())
     .option("--debug", "Emit local redacted debug telemetry to stderr.")
     .option(
       "--debug-format <format>",
@@ -108,19 +119,19 @@ export function buildProgram(): Command {
       "--allow-env-token",
       "Allow OPCHAIN_TOKEN_OVERRIDE for this invocation.",
     )
-    .helpOption("-h, --help", "Display help.")
-    .addCommand(buildIdentityCommand())
-    .addCommand(buildSecretsCommand())
-    .addCommand(buildExpiresCommand())
-    .addCommand(buildTokenCommand())
-    .addCommand(
-      new Command("migrate-v1").description(
-        "Plan or apply migration from opchain v1.",
-      ),
-    )
-    .addCommand(
-      new Command("doctor").description(
-        "Show configured identities, profiles, and vault-scope guidance.",
-      ),
-    );
+    .helpOption("-h, --help", "Display help.");
+
+  for (const definition of CLI_COMMAND_DEFINITIONS) {
+    const command = buildTopLevelCommand(definition);
+    if (command === null) {
+      continue;
+    }
+
+    program.addCommand(command);
+  }
+
+  const renderHelp = program.helpInformation.bind(program);
+  program.helpInformation = (): string =>
+    `${renderHelp()}\n${buildIdentityHelpText()}\n`;
+  return program;
 }
