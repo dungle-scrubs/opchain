@@ -1,19 +1,9 @@
 import type { CliOptions } from "./options.ts";
-import { runExpiresAdd } from "../commands/expires-add.ts";
-import { runExpiresList } from "../commands/expires-list.ts";
-import { runExpiresRemove } from "../commands/expires-remove.ts";
-import { runExpiresScan } from "../commands/expires-scan.ts";
-import { runDoctor, runIdentityList } from "../commands/identity.ts";
-import { runMigrateV1 } from "../commands/migrate.ts";
-import { runIdentityOp } from "../commands/op.ts";
-import { runSecretsCheck } from "../commands/secrets-check.ts";
-import { runSecretsInspect } from "../commands/secrets-inspect.ts";
-import { runSecretsList } from "../commands/secrets-list.ts";
-import { runSecretsValidate } from "../commands/secrets-validate.ts";
-import { runTokenRemove } from "../commands/token-remove.ts";
-import { runTokenSet } from "../commands/token-set.ts";
-
-type CommandHandler = (options: CliOptions) => Promise<number>;
+import {
+  CLI_COMMAND_DEFINITIONS,
+  type CliCommandDefinition,
+  type CommandHandler,
+} from "./manifest.ts";
 
 type CommandRoute = {
   readonly exactLength?: number;
@@ -22,39 +12,39 @@ type CommandRoute = {
   readonly subject: readonly [string, ...string[]];
 };
 
-const COMMAND_ROUTES: readonly CommandRoute[] = [
-  { handler: runIdentityOp, offset: 1, subject: ["op"] },
-  {
-    exactLength: 2,
-    handler: runIdentityList,
-    offset: 0,
-    subject: ["identity", "list"],
-  },
-  { exactLength: 1, handler: runDoctor, offset: 0, subject: ["doctor"] },
-  { handler: runSecretsList, offset: 1, subject: ["secrets", "list"] },
-  { handler: runSecretsCheck, offset: 1, subject: ["secrets", "check"] },
-  {
-    handler: runSecretsInspect,
-    offset: 1,
-    subject: ["secrets", "inspect"],
-  },
-  {
-    handler: runSecretsValidate,
-    offset: 1,
-    subject: ["secrets", "validate"],
-  },
-  { handler: runExpiresAdd, offset: 1, subject: ["expires", "add"] },
-  { handler: runExpiresList, offset: 1, subject: ["expires", "list"] },
-  {
-    handler: runExpiresRemove,
-    offset: 1,
-    subject: ["expires", "remove"],
-  },
-  { handler: runExpiresScan, offset: 1, subject: ["expires", "scan"] },
-  { handler: runTokenSet, offset: 0, subject: ["token", "set"] },
-  { handler: runTokenRemove, offset: 0, subject: ["token", "remove"] },
-  { handler: runMigrateV1, offset: 0, subject: ["migrate-v1"] },
-];
+/**
+ * Expands one shared command definition into one or more matcher routes.
+ *
+ * @param definition - Shared command definition.
+ * @returns {readonly CommandRoute[]} Route matchers derived from the manifest.
+ */
+function buildRoutesForDefinition(
+  definition: CliCommandDefinition,
+): readonly CommandRoute[] {
+  const offset = definition.identityScoped ? 1 : 0;
+
+  if (definition.kind === "command") {
+    return [
+      {
+        exactLength: definition.exactLength,
+        handler: definition.handler,
+        offset,
+        subject: [definition.name],
+      },
+    ];
+  }
+
+  return definition.children.map((child) => ({
+    exactLength: child.exactLength,
+    handler: child.handler,
+    offset,
+    subject: [definition.name, child.name],
+  }));
+}
+
+const COMMAND_ROUTES: readonly CommandRoute[] = CLI_COMMAND_DEFINITIONS.flatMap(
+  buildRoutesForDefinition,
+);
 
 /**
  * Checks whether parsed command tokens match one command route.
