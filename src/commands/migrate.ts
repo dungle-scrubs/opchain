@@ -1,9 +1,44 @@
 import { createTelemetryEvent } from "../telemetry/event.ts";
 
+import { parseCommandPath } from "../cli/command-args.ts";
+import { parseFlagArguments } from "../cli/flag-args.ts";
 import type { CliOptions } from "../cli/options.ts";
 import { writeTelemetry } from "../cli/telemetry.ts";
 import { applyMigrationPlan } from "../migrate/apply.ts";
 import { buildMigrationPlan } from "../migrate/plan.ts";
+
+const MIGRATE_BOOLEAN_FLAGS = new Set(["--dry-run"]);
+
+type MigrateOptions = {
+  readonly dryRun: boolean;
+};
+
+/**
+ * Parses trailing `migrate-v1` arguments.
+ *
+ * @param trailingArgs - Arguments after the `migrate-v1` path.
+ * @returns {MigrateOptions | string} Parsed options or an error message.
+ */
+function parseMigrateOptions(
+  trailingArgs: readonly string[],
+): MigrateOptions | string {
+  const parsedArgs = parseFlagArguments(trailingArgs, {
+    booleanFlags: MIGRATE_BOOLEAN_FLAGS,
+    valueFlags: new Set<string>(),
+  });
+
+  if (parsedArgs.unknownOptions.length > 0) {
+    return `Unknown migrate-v1 option: ${parsedArgs.unknownOptions[0]}.`;
+  }
+
+  if (parsedArgs.positionals.length > 0) {
+    return `Unknown migrate-v1 option: ${parsedArgs.positionals[0]}.`;
+  }
+
+  return {
+    dryRun: parsedArgs.booleanFlags.has("--dry-run"),
+  };
+}
 
 /**
  * Handles `opchain migrate-v1 --dry-run`.
@@ -12,7 +47,18 @@ import { buildMigrationPlan } from "../migrate/plan.ts";
  * @returns {Promise<number>} Process exit code.
  */
 export async function runMigrateV1(options: CliOptions): Promise<number> {
-  const isDryRun = options.commandArgs.includes("--dry-run");
+  const parsedPath = parseCommandPath(options.commandArgs, ["migrate-v1"]);
+  if (!parsedPath.ok) {
+    process.stderr.write(`${parsedPath.error}\n`);
+    return 1;
+  }
+
+  const migrateOptions = parseMigrateOptions(parsedPath.trailingArgs);
+  if (typeof migrateOptions === "string") {
+    process.stderr.write(`${migrateOptions}\n`);
+    return 1;
+  }
+
   const planResult = await buildMigrationPlan(options);
   if (!planResult.ok) {
     process.stderr.write(`${planResult.error}\n`);
@@ -24,11 +70,11 @@ export async function runMigrateV1(options: CliOptions): Promise<number> {
     createTelemetryEvent("migration.plan", {
       expires_record_count: planResult.value.expiresRecordCount,
       legacy_config_found: true,
-      mode: isDryRun ? "dry_run" : "apply",
+      mode: migrateOptions.dryRun ? "dry_run" : "apply",
     }),
   );
 
-  if (isDryRun) {
+  if (migrateOptions.dryRun) {
     process.stdout.write(`${planResult.value.outputLines.join("\n")}\n`);
     return 0;
   }

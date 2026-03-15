@@ -1,6 +1,8 @@
 import { promptForConfirmation } from "../token/prompt-for-token.ts";
 import { removeTokenWithHelper } from "../token/remove-token-with-helper.ts";
 
+import { parseCommandPath } from "../cli/command-args.ts";
+import { parseFlagArguments } from "../cli/flag-args.ts";
 import { loadConfigContext } from "../cli/config-context.ts";
 import type { CliOptions } from "../cli/options.ts";
 import { resolveHelperPath } from "../cli/paths.ts";
@@ -12,51 +14,33 @@ type TokenRemoveOptions = {
   readonly yes: boolean;
 };
 
+const TOKEN_REMOVE_BOOLEAN_FLAGS = new Set(["--yes"]);
+const TOKEN_REMOVE_VALUE_FLAGS = new Set(["--identity", "--profile"]);
+
 /**
- * Parses `token remove` command arguments.
+ * Parses trailing `token remove` arguments.
  *
- * @param commandArgs - Command tokens beginning with `token remove`.
+ * @param trailingArgs - Arguments after the `token remove` path.
  * @returns {TokenRemoveOptions | string} Parsed options or an error message.
  */
 function parseTokenRemoveOptions(
-  commandArgs: readonly string[],
+  trailingArgs: readonly string[],
 ): TokenRemoveOptions | string {
-  let identity: string | undefined;
-  let profile: string | undefined;
-  let yes = false;
-  const unexpectedArgs: string[] = [];
+  const parsedArgs = parseFlagArguments(trailingArgs, {
+    booleanFlags: TOKEN_REMOVE_BOOLEAN_FLAGS,
+    valueFlags: TOKEN_REMOVE_VALUE_FLAGS,
+  });
 
-  for (let index = 2; index < commandArgs.length; index += 1) {
-    const token = commandArgs[index];
-
-    if (token === undefined) {
-      continue;
-    }
-
-    if (token === "--yes") {
-      yes = true;
-      continue;
-    }
-
-    if (token === "--identity") {
-      identity = commandArgs[index + 1];
-      index += 1;
-      continue;
-    }
-
-    if (token === "--profile") {
-      profile = commandArgs[index + 1];
-      index += 1;
-      continue;
-    }
-
-    unexpectedArgs.push(token);
+  if (parsedArgs.positionals.length > 0) {
+    return `Unknown token remove option: ${parsedArgs.positionals[0]}.`;
   }
 
-  if (unexpectedArgs.length > 0) {
-    return `Unknown token remove option: ${unexpectedArgs[0]}.`;
+  if (parsedArgs.unknownOptions.length > 0) {
+    return `Unknown token remove option: ${parsedArgs.unknownOptions[0]}.`;
   }
 
+  const identity = parsedArgs.valueFlags.get("--identity");
+  const profile = parsedArgs.valueFlags.get("--profile");
   if (identity === undefined || profile === undefined) {
     return "token remove requires --identity and --profile.";
   }
@@ -64,7 +48,7 @@ function parseTokenRemoveOptions(
   return {
     identity,
     profile,
-    yes,
+    yes: parsedArgs.booleanFlags.has("--yes"),
   };
 }
 
@@ -75,7 +59,16 @@ function parseTokenRemoveOptions(
  * @returns {Promise<number>} Process exit code.
  */
 export async function runTokenRemove(options: CliOptions): Promise<number> {
-  const tokenRemoveOptions = parseTokenRemoveOptions(options.commandArgs);
+  const parsedArgs = parseCommandPath(options.commandArgs, [
+    "token",
+    "remove",
+  ]);
+  if (!parsedArgs.ok) {
+    process.stderr.write(`${parsedArgs.error}\n`);
+    return 1;
+  }
+
+  const tokenRemoveOptions = parseTokenRemoveOptions(parsedArgs.trailingArgs);
   if (typeof tokenRemoveOptions === "string") {
     process.stderr.write(`${tokenRemoveOptions}\n`);
     return 1;

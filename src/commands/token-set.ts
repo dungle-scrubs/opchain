@@ -1,6 +1,8 @@
 import { promptForToken } from "../token/prompt-for-token.ts";
 import { setTokenWithHelper } from "../token/set-token-with-helper.ts";
 
+import { parseCommandPath } from "../cli/command-args.ts";
+import { parseFlagArguments } from "../cli/flag-args.ts";
 import { readTokenFromStdin } from "../cli/io.ts";
 import { loadConfigContext } from "../cli/config-context.ts";
 import type { CliOptions } from "../cli/options.ts";
@@ -13,55 +15,33 @@ type TokenSetOptions = {
   readonly stdin: boolean;
 };
 
+const TOKEN_SET_BOOLEAN_FLAGS = new Set(["--stdin"]);
+const TOKEN_SET_VALUE_FLAGS = new Set(["--identity", "--profile"]);
+
 /**
- * Parses `token set` command arguments.
+ * Parses trailing `token set` arguments.
  *
- * @param commandArgs - Command tokens beginning with `token set`.
+ * @param trailingArgs - Arguments after the `token set` path.
  * @returns {TokenSetOptions | string} Parsed options or an error message.
  */
 function parseTokenSetOptions(
-  commandArgs: readonly string[],
+  trailingArgs: readonly string[],
 ): TokenSetOptions | string {
-  let identity: string | undefined;
-  let profile: string | undefined;
-  let useStdin = false;
-  const unexpectedArgs: string[] = [];
+  const parsedArgs = parseFlagArguments(trailingArgs, {
+    booleanFlags: TOKEN_SET_BOOLEAN_FLAGS,
+    valueFlags: TOKEN_SET_VALUE_FLAGS,
+  });
 
-  for (let index = 2; index < commandArgs.length; index += 1) {
-    const token = commandArgs[index];
-
-    if (token === undefined) {
-      continue;
-    }
-
-    if (token === "--stdin") {
-      useStdin = true;
-      continue;
-    }
-
-    if (token === "--identity") {
-      identity = commandArgs[index + 1];
-      index += 1;
-      continue;
-    }
-
-    if (token === "--profile") {
-      profile = commandArgs[index + 1];
-      index += 1;
-      continue;
-    }
-
-    unexpectedArgs.push(token);
-  }
-
-  if (unexpectedArgs.some((token) => !token.startsWith("-"))) {
+  if (parsedArgs.positionals.length > 0) {
     return "token set does not accept token values through argv.";
   }
 
-  if (unexpectedArgs.length > 0) {
-    return `Unknown token set option: ${unexpectedArgs[0]}.`;
+  if (parsedArgs.unknownOptions.length > 0) {
+    return `Unknown token set option: ${parsedArgs.unknownOptions[0]}.`;
   }
 
+  const identity = parsedArgs.valueFlags.get("--identity");
+  const profile = parsedArgs.valueFlags.get("--profile");
   if (identity === undefined || profile === undefined) {
     return "token set requires --identity and --profile.";
   }
@@ -69,7 +49,7 @@ function parseTokenSetOptions(
   return {
     identity,
     profile,
-    stdin: useStdin,
+    stdin: parsedArgs.booleanFlags.has("--stdin"),
   };
 }
 
@@ -80,7 +60,13 @@ function parseTokenSetOptions(
  * @returns {Promise<number>} Process exit code.
  */
 export async function runTokenSet(options: CliOptions): Promise<number> {
-  const tokenSetOptions = parseTokenSetOptions(options.commandArgs);
+  const parsedArgs = parseCommandPath(options.commandArgs, ["token", "set"]);
+  if (!parsedArgs.ok) {
+    process.stderr.write(`${parsedArgs.error}\n`);
+    return 1;
+  }
+
+  const tokenSetOptions = parseTokenSetOptions(parsedArgs.trailingArgs);
   if (typeof tokenSetOptions === "string") {
     process.stderr.write(`${tokenSetOptions}\n`);
     return 1;

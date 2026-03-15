@@ -5,6 +5,7 @@ import {
 } from "../secrets/reference-validation.ts";
 import { createTelemetryEvent } from "../telemetry/event.ts";
 
+import { parseIdentityCommandPath } from "../cli/command-args.ts";
 import { readTextFile } from "../cli/io.ts";
 import type { CliOptions } from "../cli/options.ts";
 import { writeTelemetry } from "../cli/telemetry.ts";
@@ -17,13 +18,17 @@ import { resolveReadIdentityContext } from "../cli/token-context.ts";
  * @returns {Promise<number>} Process exit code.
  */
 export async function runSecretsCheck(options: CliOptions): Promise<number> {
-  const identityName = options.commandArgs[0];
-  const targetPath = options.commandArgs[3];
-
-  if (identityName === undefined) {
-    process.stderr.write("Missing identity before secrets command.\n");
+  const parsedArgs = parseIdentityCommandPath(options.commandArgs, [
+    "secrets",
+    "check",
+  ]);
+  if (!parsedArgs.ok) {
+    process.stderr.write(`${parsedArgs.error}\n`);
     return 1;
   }
+
+  const { identityName } = parsedArgs;
+  const [targetPath] = parsedArgs.trailingArgs;
 
   if (targetPath === undefined) {
     process.stderr.write(

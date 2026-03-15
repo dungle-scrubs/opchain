@@ -60,6 +60,29 @@ describe("parseCliOptions", () => {
     });
   });
 
+  test("extracts op-specific overrides in documented identity-first order", () => {
+    const result = parseCliOptions([
+      "human",
+      "--profile",
+      "writer",
+      "--write",
+      "--allow-env-token",
+      "op",
+      "vault",
+      "list",
+    ]);
+
+    expect(result).toEqual({
+      accessOverride: "write",
+      allowEnvToken: true,
+      commandArgs: ["human", "op", "vault", "list"],
+      debug: false,
+      debugFormat: "text",
+      explicitProfile: "writer",
+      help: false,
+    });
+  });
+
   test("does not strip profile flags for non-op commands", () => {
     const result = parseCliOptions(["token", "set", "--profile", "writer"]);
 
@@ -67,6 +90,27 @@ describe("parseCliOptions", () => {
       accessOverride: undefined,
       allowEnvToken: false,
       commandArgs: ["token", "set", "--profile", "writer"],
+      debug: false,
+      debugFormat: "text",
+      explicitProfile: undefined,
+      help: false,
+    });
+  });
+
+  test("does not extract op-specific flags from malformed identity envelopes", () => {
+    const result = parseCliOptions([
+      "human",
+      "unexpected",
+      "--write",
+      "op",
+      "vault",
+      "list",
+    ]);
+
+    expect(result).toEqual({
+      accessOverride: undefined,
+      allowEnvToken: false,
+      commandArgs: ["human", "unexpected", "--write", "op", "vault", "list"],
       debug: false,
       debugFormat: "text",
       explicitProfile: undefined,
