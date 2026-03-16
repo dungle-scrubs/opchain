@@ -71,7 +71,9 @@ export function formatSecretInspectOutput(
  * @param input - Parsed JSON payload.
  * @returns {ExpiryTrackedItem | string} Canonical tracked item or an error.
  */
-export function parseExpiryTrackedItem(input: unknown): ExpiryTrackedItem | string {
+export function parseExpiryTrackedItem(
+  input: unknown,
+): ExpiryTrackedItem | string {
   try {
     if (!isRecord(input)) {
       return "Invalid expiry tracking payload.";
@@ -125,7 +127,10 @@ function readFieldLabels(input: unknown): readonly string[] | string {
  * @param key - Property name.
  * @returns {string} String property value.
  */
-function readStringProperty(input: Record<string, unknown>, key: string): string {
+function readStringProperty(
+  input: Record<string, unknown>,
+  key: string,
+): string {
   const value = input[key];
   if (typeof value !== "string") {
     throw new Error(`Expected string property: ${key}`);

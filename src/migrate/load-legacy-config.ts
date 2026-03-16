@@ -65,9 +65,7 @@ export function loadLegacyConfig(configPath: string): LegacyConfig | null {
       case "expires_threshold": {
         const expiresThreshold = parsePositiveInteger(value);
         if (expiresThreshold === null) {
-          throw new Error(
-            "expires_threshold must be a positive integer.",
-          );
+          throw new Error("expires_threshold must be a positive integer.");
         }
 
         config.expiresThreshold = expiresThreshold;

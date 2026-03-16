@@ -29,7 +29,9 @@ describe("formatRuntimeError", () => {
 describe("isExecutableAvailable", () => {
   test("detects absolute executable paths", () => {
     expect(
-      isExecutableAvailable(join(process.cwd(), "test/fixtures/bin/opchain-helper")),
+      isExecutableAvailable(
+        join(process.cwd(), "test/fixtures/bin/opchain-helper"),
+      ),
     ).toBe(true);
     expect(isExecutableAvailable("/definitely/missing/executable")).toBe(false);
   });

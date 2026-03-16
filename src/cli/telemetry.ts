@@ -45,7 +45,10 @@ function renderTelemetryEvent(
  * @param event - Event to emit.
  * @returns {void} Nothing.
  */
-export function writeTelemetry(options: CliOptions, event: TelemetryEvent): void {
+export function writeTelemetry(
+  options: CliOptions,
+  event: TelemetryEvent,
+): void {
   if (!options.debug) {
     return;
   }

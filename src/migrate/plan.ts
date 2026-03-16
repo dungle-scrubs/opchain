@@ -5,7 +5,10 @@ import { readOpItemJson } from "../op/item-json.ts";
 import { parseExpiryTrackedItem } from "../commands/item-payload.ts";
 
 import type { CliOptions } from "../cli/options.ts";
-import { resolveLegacyConfigPath, resolveLegacyExpiresPath } from "../cli/paths.ts";
+import {
+  resolveLegacyConfigPath,
+  resolveLegacyExpiresPath,
+} from "../cli/paths.ts";
 import type { RuntimeResult } from "../cli/result.ts";
 import { resolveTokenForAccount } from "../cli/token-context.ts";
 

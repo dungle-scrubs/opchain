@@ -10,7 +10,9 @@ import { buildProgram } from "../../src/cli/program.ts";
  * @returns {ReturnType<typeof buildProgram>["commands"][number]} Matching child command.
  */
 function getCommand(name: string): Command {
-  const command = buildProgram().commands.find((entry) => entry.name() === name);
+  const command = buildProgram().commands.find(
+    (entry) => entry.name() === name,
+  );
   if (command === undefined) {
     throw new Error(`Missing command: ${name}`);
   }
@@ -50,25 +52,18 @@ describe("buildProgram", () => {
   });
 
   test("builds the expected nested subcommands", () => {
-    expect(getCommand("identity").commands.map((command) => command.name())).toEqual([
-      "list",
-    ]);
-    expect(getCommand("secrets").commands.map((command) => command.name())).toEqual([
-      "list",
-      "check",
-      "inspect",
-      "validate",
-    ]);
-    expect(getCommand("expires").commands.map((command) => command.name())).toEqual([
-      "add",
-      "remove",
-      "list",
-      "scan",
-    ]);
-    expect(getCommand("token").commands.map((command) => command.name())).toEqual([
-      "set",
-      "remove",
-    ]);
+    expect(
+      getCommand("identity").commands.map((command) => command.name()),
+    ).toEqual(["list"]);
+    expect(
+      getCommand("secrets").commands.map((command) => command.name()),
+    ).toEqual(["list", "check", "inspect", "validate"]);
+    expect(
+      getCommand("expires").commands.map((command) => command.name()),
+    ).toEqual(["add", "remove", "list", "scan"]);
+    expect(
+      getCommand("token").commands.map((command) => command.name()),
+    ).toEqual(["set", "remove"]);
   });
 
   test("includes key command descriptions in help output", () => {
@@ -92,8 +87,12 @@ describe("buildProgram", () => {
       "<identity> [--profile <name>|--read|--write] [--allow-env-token] op <args...>",
     );
     expect(helpText).toContain("Identity-scoped commands:");
-    expect(helpText).toContain("opchain <identity> secrets <list|check|inspect|validate>");
-    expect(helpText).toContain("opchain <identity> expires <add|remove|list|scan>");
+    expect(helpText).toContain(
+      "opchain <identity> secrets <list|check|inspect|validate>",
+    );
+    expect(helpText).toContain(
+      "opchain <identity> expires <add|remove|list|scan>",
+    );
     expect(helpText).toContain("Examples:");
     expect(helpText).toContain("opchain human op vault list");
     expect(helpText).toContain(

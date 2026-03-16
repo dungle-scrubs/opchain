@@ -59,10 +59,7 @@ function parseTokenRemoveOptions(
  * @returns {Promise<number>} Process exit code.
  */
 export async function runTokenRemove(options: CliOptions): Promise<number> {
-  const parsedArgs = parseCommandPath(options.commandArgs, [
-    "token",
-    "remove",
-  ]);
+  const parsedArgs = parseCommandPath(options.commandArgs, ["token", "remove"]);
   if (!parsedArgs.ok) {
     process.stderr.write(`${parsedArgs.error}\n`);
     return 1;

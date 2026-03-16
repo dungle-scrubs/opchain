@@ -29,7 +29,10 @@ export async function runExpiresScan(options: CliOptions): Promise<number> {
   }
 
   const { identityName } = parsedArgs;
-  const identityContext = await resolveReadIdentityContext(options, identityName);
+  const identityContext = await resolveReadIdentityContext(
+    options,
+    identityName,
+  );
   if (!identityContext.ok) {
     process.stderr.write(`${identityContext.error}\n`);
     return 1;
@@ -87,7 +90,8 @@ export async function runExpiresScan(options: CliOptions): Promise<number> {
       createTelemetryEvent("expires.threshold.evaluate", {
         item_uuid: trackedItem.itemUuid,
         status,
-        threshold_days: identityContext.value.config.defaults.expiresThresholdDays,
+        threshold_days:
+          identityContext.value.config.defaults.expiresThresholdDays,
         vault_uuid: trackedItem.vaultUuid,
       }),
     );

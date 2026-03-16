@@ -84,4 +84,3 @@ function walkDirectory(directoryPath: string): EnvOpScanResult {
 
   return { files: foundFiles, warnings };
 }
-

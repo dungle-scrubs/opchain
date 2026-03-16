@@ -166,7 +166,9 @@ describe("resolveOpProfile", () => {
 
 describe("resolveConfiguredAccount", () => {
   test("resolves a configured keychain account", () => {
-    expect(resolveConfiguredAccount(createConfig(), "explicit", "admin")).toEqual({
+    expect(
+      resolveConfiguredAccount(createConfig(), "explicit", "admin"),
+    ).toEqual({
       accountName: "opchain:explicit:admin",
     });
   });
@@ -175,8 +177,8 @@ describe("resolveConfiguredAccount", () => {
     expect(resolveConfiguredAccount(createConfig(), "missing", "admin")).toBe(
       "Unknown identity: missing.",
     );
-    expect(resolveConfiguredAccount(createConfig(), "explicit", "missing")).toBe(
-      "Unknown profile for explicit: missing.",
-    );
+    expect(
+      resolveConfiguredAccount(createConfig(), "explicit", "missing"),
+    ).toBe("Unknown profile for explicit: missing.");
   });
 });

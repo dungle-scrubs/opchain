@@ -61,7 +61,10 @@ describe("resolveTokenForAccount", () => {
           process.cwd(),
           "test/fixtures/bin/opchain-helper",
         ),
-        OPCHAIN_SECURITY_PATH: join(process.cwd(), "test/fixtures/bin/security"),
+        OPCHAIN_SECURITY_PATH: join(
+          process.cwd(),
+          "test/fixtures/bin/security",
+        ),
         OPCHAIN_TEST_HELPER_EXIT_CODE: "17",
         OPCHAIN_TEST_HELPER_STDERR: "helper leaked token",
         OPCHAIN_TEST_SECURITY_EXIT_CODE: "44",

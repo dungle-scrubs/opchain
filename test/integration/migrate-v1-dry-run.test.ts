@@ -50,9 +50,7 @@ describe("migrate-v1 --dry-run", () => {
     expect(result.stdout).toContain(
       "Set defaults.expires_threshold_days -> 14",
     );
-    expect(result.stdout).toContain(
-      "Cannot import legacy expiry records:",
-    );
+    expect(result.stdout).toContain("Cannot import legacy expiry records:");
     expect(result.stderr).toBe("");
   });
 });

@@ -50,9 +50,10 @@ function createConfig(): Config {
  * @param stderr - Raw stderr output.
  * @returns {readonly { readonly attributes: Record<string, unknown>; readonly name: string }[]} Parsed telemetry events.
  */
-function parseEvents(
-  stderr: string,
-): readonly { readonly attributes: Record<string, unknown>; readonly name: string }[] {
+function parseEvents(stderr: string): readonly {
+  readonly attributes: Record<string, unknown>;
+  readonly name: string;
+}[] {
   return stderr
     .trim()
     .split("\n")

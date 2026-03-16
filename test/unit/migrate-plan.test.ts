@@ -47,7 +47,10 @@ function writeLegacyConfig(homePath: string, lines: readonly string[]): string {
  * @param lines - Expires file lines.
  * @returns {string} Legacy expires path.
  */
-function writeLegacyExpires(homePath: string, lines: readonly string[]): string {
+function writeLegacyExpires(
+  homePath: string,
+  lines: readonly string[],
+): string {
   const legacyConfigDirectoryPath = join(homePath, ".config", "opchain");
   const legacyExpiresPath = join(legacyConfigDirectoryPath, "expires");
 

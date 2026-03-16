@@ -135,14 +135,7 @@ describe("secrets validate", () => {
 
     const result = spawnSync(
       process.execPath,
-      [
-        "run",
-        "src/index.ts",
-        "human",
-        "secrets",
-        "validate",
-        missingPath,
-      ],
+      ["run", "src/index.ts", "human", "secrets", "validate", missingPath],
       {
         cwd: process.cwd(),
         encoding: "utf8",

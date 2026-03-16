@@ -1,7 +1,10 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import type { AccessMode, KeychainBackend } from "../../src/config/load-config.ts";
+import type {
+  AccessMode,
+  KeychainBackend,
+} from "../../src/config/load-config.ts";
 
 type TestIdentityConfig = {
   readonly defaultMode: AccessMode;
@@ -54,9 +57,7 @@ const DEFAULTS: TestConfigDefaults = {
  * @param definition - Test config definition.
  * @returns {string} TOML config content.
  */
-export function renderOpchainConfig(
-  definition: TestConfigDefinition,
-): string {
+export function renderOpchainConfig(definition: TestConfigDefinition): string {
   const defaults = {
     ...DEFAULTS,
     ...definition.defaults,
@@ -69,7 +70,9 @@ export function renderOpchainConfig(
     `enforce_vault_allowlist = ${String(defaults.enforceVaultAllowlist)}`,
   ];
 
-  for (const [identityName, identity] of Object.entries(definition.identities)) {
+  for (const [identityName, identity] of Object.entries(
+    definition.identities,
+  )) {
     lines.push(
       "",
       `[identities.${identityName}]`,
@@ -77,7 +80,9 @@ export function renderOpchainConfig(
       `vaults = [${identity.vaults.map((vault) => `"${vault}"`).join(", ")}]`,
     );
 
-    for (const [profileName, keychainAccount] of Object.entries(identity.profiles)) {
+    for (const [profileName, keychainAccount] of Object.entries(
+      identity.profiles,
+    )) {
       lines.push(
         "",
         `[identities.${identityName}.profiles.${profileName}]`,

@@ -49,7 +49,9 @@ function collectIdentityExamples(): readonly string[] {
 function buildIdentityHelpText(): string {
   const commandLines = CLI_COMMAND_DEFINITIONS.filter(
     (definition) => definition.identityScoped,
-  ).map((definition) => `  opchain ${definition.invocation ?? definition.name}`);
+  ).map(
+    (definition) => `  opchain ${definition.invocation ?? definition.name}`,
+  );
   const exampleLines = collectIdentityExamples().map(
     (example) => `  ${example}`,
   );
@@ -86,7 +88,9 @@ function buildTopLevelCommand(
 
   return definition.children.reduce(
     (command, child) =>
-      command.addCommand(new Command(child.name).description(child.description)),
+      command.addCommand(
+        new Command(child.name).description(child.description),
+      ),
     new Command(definition.name).description(description),
   );
 }

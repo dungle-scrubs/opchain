@@ -69,8 +69,9 @@ describe("loadConfigContext", () => {
       "missing.toml",
     );
 
-    const result = await withEnv({ OPCHAIN_CONFIG_PATH: configPath }, async () =>
-      loadConfigContext(createCliOptions()),
+    const result = await withEnv(
+      { OPCHAIN_CONFIG_PATH: configPath },
+      async () => loadConfigContext(createCliOptions()),
     );
 
     expect(result.ok).toBe(false);

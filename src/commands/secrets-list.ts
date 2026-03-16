@@ -42,7 +42,10 @@ export async function runSecretsList(options: CliOptions): Promise<number> {
     return 1;
   }
 
-  const envOpFileResult = readTextFile(targetPath, "Failed to read .env.op file");
+  const envOpFileResult = readTextFile(
+    targetPath,
+    "Failed to read .env.op file",
+  );
   if (!envOpFileResult.ok) {
     process.stderr.write(`${envOpFileResult.error}\n`);
     return 1;

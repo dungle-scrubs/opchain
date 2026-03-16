@@ -11,10 +11,7 @@ import {
 
 describe("expiry state lock", () => {
   test("fails fast when the state file is already locked", () => {
-    const directoryPath = join(
-      tmpdir(),
-      `opchain-expires-lock-${Date.now()}`,
-    );
+    const directoryPath = join(tmpdir(), `opchain-expires-lock-${Date.now()}`);
     const statePath = join(directoryPath, "human.json");
     const lockPath = join(directoryPath, "human.json.lock");
     const state: ExpiryState = {

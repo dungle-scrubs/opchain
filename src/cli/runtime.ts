@@ -1,4 +1,7 @@
-import { createTelemetryEvent, type TelemetryEvent } from "../telemetry/event.ts";
+import {
+  createTelemetryEvent,
+  type TelemetryEvent,
+} from "../telemetry/event.ts";
 
 import { parseCliOptions, type CliOptions } from "./options.ts";
 import { buildProgram } from "./program.ts";

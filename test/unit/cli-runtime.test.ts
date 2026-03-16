@@ -9,9 +9,7 @@ import { createCliOptions } from "../helpers/create-cli-options.ts";
  * @param overrides - Dependency overrides for one test case.
  * @returns {Readonly<{ deps: CliRuntimeDeps; stderr: string[]; stdout: string[]; telemetry: TelemetryEvent[] }>} Runtime deps plus captured side effects.
  */
-function createRuntimeDeps(
-  overrides: Partial<CliRuntimeDeps> = {},
-): Readonly<{
+function createRuntimeDeps(overrides: Partial<CliRuntimeDeps> = {}): Readonly<{
   deps: CliRuntimeDeps;
   stderr: string[];
   stdout: string[];
@@ -79,7 +77,7 @@ describe("runCli", () => {
       debug: true,
       debugFormat: "json",
     });
-    const handledOptions: typeof options[] = [];
+    const handledOptions: (typeof options)[] = [];
     const runtime = createRuntimeDeps({
       findCommandHandler: () => async (receivedOptions) => {
         handledOptions.push(receivedOptions);

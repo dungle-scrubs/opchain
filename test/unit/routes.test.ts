@@ -69,7 +69,9 @@ describe("findCommandHandler", () => {
   });
 
   test("returns null for unsupported commands", () => {
-    const handler = findCommandHandler(createCliOptions(["unknown", "command"]));
+    const handler = findCommandHandler(
+      createCliOptions(["unknown", "command"]),
+    );
 
     expect(handler).toBeNull();
   });

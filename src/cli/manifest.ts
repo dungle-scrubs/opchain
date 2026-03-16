@@ -102,7 +102,8 @@ export const CLI_COMMAND_DEFINITIONS: readonly CliCommandDefinition[] = [
         name: "inspect",
       },
       {
-        description: "Validate refs across one file or directory of `.env.op` files.",
+        description:
+          "Validate refs across one file or directory of `.env.op` files.",
         handler: runSecretsValidate,
         name: "validate",
       },
@@ -111,7 +112,8 @@ export const CLI_COMMAND_DEFINITIONS: readonly CliCommandDefinition[] = [
     examples: ["opchain human secrets validate"],
     identityScoped: true,
     includeInTopLevel: true,
-    invocation: "<identity> secrets <list|check|inspect|validate> [path-or-ref]",
+    invocation:
+      "<identity> secrets <list|check|inspect|validate> [path-or-ref]",
     kind: "group",
     name: "secrets",
   },
@@ -177,7 +179,8 @@ export const CLI_COMMAND_DEFINITIONS: readonly CliCommandDefinition[] = [
     name: "migrate-v1",
   },
   {
-    description: "Show configured identities, profiles, and vault-scope guidance.",
+    description:
+      "Show configured identities, profiles, and vault-scope guidance.",
     exactLength: 1,
     handler: runDoctor,
     identityScoped: false,

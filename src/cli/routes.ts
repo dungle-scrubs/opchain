@@ -57,7 +57,10 @@ function matchesRoute(
   commandArgs: readonly string[],
   route: CommandRoute,
 ): boolean {
-  if (route.exactLength !== undefined && commandArgs.length !== route.exactLength) {
+  if (
+    route.exactLength !== undefined &&
+    commandArgs.length !== route.exactLength
+  ) {
     return false;
   }
 

@@ -13,7 +13,9 @@ describe("parseFlagArguments", () => {
     );
 
     expect([...result.booleanFlags]).toEqual(["--debug"]);
-    expect([...result.valueFlags.entries()]).toEqual([["--debug-format", "json"]]);
+    expect([...result.valueFlags.entries()]).toEqual([
+      ["--debug-format", "json"],
+    ]);
     expect(result.unknownOptions).toEqual(["--unknown"]);
     expect(result.positionals).toEqual(["doctor", "value"]);
     expect(result.unparsedTokens).toEqual(["doctor", "--unknown", "value"]);
@@ -25,7 +27,9 @@ describe("parseFlagArguments", () => {
       valueFlags: new Set(["--profile"]),
     });
 
-    expect([...result.valueFlags.entries()]).toEqual([["--profile", undefined]]);
+    expect([...result.valueFlags.entries()]).toEqual([
+      ["--profile", undefined],
+    ]);
     expect(result.positionals).toEqual([]);
     expect(result.unknownOptions).toEqual([]);
     expect(result.unparsedTokens).toEqual([]);

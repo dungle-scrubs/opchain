@@ -14,7 +14,9 @@ describe("demo script", () => {
     expect(result.stdout).toContain("Fixture-backed opchain demo");
     expect(result.stdout).toContain("--- doctor");
     expect(result.stdout).toContain("Helper status: available");
-    expect(result.stdout).toContain("--- human secrets validate (directory scan)");
+    expect(result.stdout).toContain(
+      "--- human secrets validate (directory scan)",
+    );
     expect(result.stdout).toContain("ok op://Models/Anthropic/api-key");
     expect(result.stdout).toContain(
       "--- kevin --write op item edit Stripe --vault Services",

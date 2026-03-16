@@ -80,7 +80,10 @@ export async function runSecretsValidate(options: CliOptions): Promise<number> {
     return 1;
   }
 
-  const identityContext = await resolveReadIdentityContext(options, identityName);
+  const identityContext = await resolveReadIdentityContext(
+    options,
+    identityName,
+  );
   if (!identityContext.ok) {
     process.stderr.write(`${identityContext.error}\n`);
     return 1;

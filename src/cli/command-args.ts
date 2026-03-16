@@ -59,7 +59,10 @@ export function parseCommandPath(
   commandArgs: readonly string[],
   path: CommandPath,
 ): CommandPathParseResult {
-  if (commandArgs.length < path.length || !matchesCommandPath(commandArgs, path, 0)) {
+  if (
+    commandArgs.length < path.length ||
+    !matchesCommandPath(commandArgs, path, 0)
+  ) {
     return {
       error: formatInvalidCommandShape(path),
       ok: false,
