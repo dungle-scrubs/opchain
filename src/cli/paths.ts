@@ -9,7 +9,7 @@ import { join } from "node:path";
 export function resolveConfigPath(): string {
   return process.env.OPCHAIN_CONFIG_PATH
     ? process.env.OPCHAIN_CONFIG_PATH
-    : join(homedir(), ".config", "opchain-v2", "config.toml");
+    : join(homedir(), ".config", "opchain", "config.toml");
 }
 
 /**
@@ -49,7 +49,7 @@ export function resolveExpiryStatePath(identityName: string): string {
   return join(
     homedir(),
     ".config",
-    "opchain-v2",
+    "opchain",
     "state",
     "expires",
     `${identityName}.json`,

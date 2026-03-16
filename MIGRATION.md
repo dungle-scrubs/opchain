@@ -38,8 +38,8 @@ explicit and non-destructive.
 
 `opchain migrate-v1` writes:
 
-- `~/.config/opchain-v2/config.toml`
-- `~/.config/opchain-v2/state/expires/kevin.json`
+- `~/.config/opchain/config.toml`
+- `~/.config/opchain/state/expires/kevin.json`
 
 The current apply path is intentionally narrow:
 
@@ -58,8 +58,8 @@ Apply mode is guarded.
 
 It fails instead of overwriting when either target already exists:
 
-- `~/.config/opchain-v2/config.toml`
-- `~/.config/opchain-v2/state/expires/kevin.json`
+- `~/.config/opchain/config.toml`
+- `~/.config/opchain/state/expires/kevin.json`
 
 That guard exists to stop silent data loss and sloppy repeated migrations.
 

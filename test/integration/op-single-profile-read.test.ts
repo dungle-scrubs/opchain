@@ -8,7 +8,7 @@ import { writeHumanConfig } from "../helpers/write-opchain-config.ts";
 
 describe("single-profile op execution", () => {
   test("runs an allowlisted read-safe op command for a single-profile identity", () => {
-    const homePath = mkdtempSync(join(tmpdir(), "opchain-v2-home-"));
+    const homePath = mkdtempSync(join(tmpdir(), "opchain-home-"));
     const opLogPath = join(homePath, "op.log");
 
     writeHumanConfig(homePath);

@@ -8,11 +8,11 @@ import { spawnSync } from "node:child_process";
 
 describe("expires remove", () => {
   test("removes one tracked item by canonical vault/item IDs", () => {
-    const homePath = mkdtempSync(join(tmpdir(), "opchain-v2-home-"));
+    const homePath = mkdtempSync(join(tmpdir(), "opchain-home-"));
     const stateDirectoryPath = join(
       homePath,
       ".config",
-      "opchain-v2",
+      "opchain",
       "state",
       "expires",
     );

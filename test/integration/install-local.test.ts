@@ -8,7 +8,7 @@ import { writeHumanConfig } from "../helpers/write-opchain-config.ts";
 
 describe("install-local", () => {
   test("builds and installs a compiled binary into ~/.local/bin", () => {
-    const homePath = mkdtempSync(join(tmpdir(), "opchain-v2-home-"));
+    const homePath = mkdtempSync(join(tmpdir(), "opchain-home-"));
     const installPath = join(homePath, ".local", "bin", "opchain");
     const helperPath = join(process.cwd(), "test/fixtures/bin/opchain-helper");
 

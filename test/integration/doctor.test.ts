@@ -11,10 +11,10 @@ import {
 
 describe("doctor", () => {
   test("prints configured identities, profiles, and vault-scope guidance", () => {
-    const homePath = mkdtempSync(join(tmpdir(), "opchain-v2-home-"));
+    const homePath = mkdtempSync(join(tmpdir(), "opchain-home-"));
     writeHumanAndKevinConfig(homePath, {
       kevinVaults: ["Personal", "Services"],
-      kevinWriteAccount: "opchain-v2:kevin:write",
+      kevinWriteAccount: "opchain:kevin:write",
     });
 
     const helperPath = join(process.cwd(), "test/fixtures/bin/opchain-helper");
@@ -49,7 +49,7 @@ describe("doctor", () => {
   });
 
   test("treats a helper found on PATH as available", () => {
-    const homePath = mkdtempSync(join(tmpdir(), "opchain-v2-home-"));
+    const homePath = mkdtempSync(join(tmpdir(), "opchain-home-"));
     const helperDirectoryPath = join(process.cwd(), "test/fixtures/bin");
 
     writeHumanConfig(homePath);

@@ -14,7 +14,7 @@ Implemented so far:
 
 - Bun + TypeScript project baseline with strict typecheck
 - Biome 2.4.7 lint and format scripts
-- config loader for `~/.config/opchain-v2/config.toml`
+- config loader for `~/.config/opchain/config.toml`
 - typed validation for defaults, identities, profiles, and vault arrays
 - `opchain --help`
 - `opchain identity list`

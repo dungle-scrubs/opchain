@@ -110,7 +110,7 @@ export async function runTokenSet(options: CliOptions): Promise<number> {
   const setResult = await setTokenWithHelper({
     accountName: resolvedAccount.accountName,
     helperPath: resolveHelperPath(),
-    serviceName: "opchain-v2",
+    serviceName: "opchain",
     token,
   });
   if (!setResult.ok) {

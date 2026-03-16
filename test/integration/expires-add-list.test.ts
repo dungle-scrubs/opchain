@@ -9,11 +9,11 @@ import { writeHumanConfig } from "../helpers/write-opchain-config.ts";
 
 describe("expires add/list", () => {
   test("persists canonical IDs and lists tracked items", () => {
-    const homePath = mkdtempSync(join(tmpdir(), "opchain-v2-home-"));
+    const homePath = mkdtempSync(join(tmpdir(), "opchain-home-"));
     const statePath = join(
       homePath,
       ".config",
-      "opchain-v2",
+      "opchain",
       "state",
       "expires",
       "human.json",

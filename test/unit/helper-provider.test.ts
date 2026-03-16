@@ -8,9 +8,9 @@ describe("getTokenFromHelper", () => {
     process.env.OPCHAIN_TEST_HELPER_TOKEN = "token-from-helper";
 
     const result = await getTokenFromHelper({
-      accountName: "opchain-v2:kevin:read",
+      accountName: "opchain:kevin:read",
       helperPath: join(process.cwd(), "test/fixtures/bin/opchain-helper"),
-      serviceName: "opchain-v2",
+      serviceName: "opchain",
     });
 
     expect(result.ok).toBe(true);

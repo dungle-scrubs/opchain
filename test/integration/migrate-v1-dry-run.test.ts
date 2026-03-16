@@ -6,7 +6,7 @@ import { spawnSync } from "node:child_process";
 
 describe("migrate-v1 --dry-run", () => {
   test("prints planned token mappings and detected legacy inputs", () => {
-    const homePath = mkdtempSync(join(tmpdir(), "opchain-v2-home-"));
+    const homePath = mkdtempSync(join(tmpdir(), "opchain-home-"));
     const legacyConfigDirectoryPath = join(homePath, ".config", "opchain");
     const legacyConfigPath = join(legacyConfigDirectoryPath, "config");
     const legacyExpiresPath = join(legacyConfigDirectoryPath, "expires");

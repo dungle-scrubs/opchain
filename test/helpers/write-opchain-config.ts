@@ -100,7 +100,7 @@ export function writeHomeConfig(
   homePath: string,
   definition: TestConfigDefinition,
 ): string {
-  const configDirectoryPath = join(homePath, ".config", "opchain-v2");
+  const configDirectoryPath = join(homePath, ".config", "opchain");
   const configPath = join(configDirectoryPath, "config.toml");
 
   mkdirSync(configDirectoryPath, { recursive: true });
@@ -127,7 +127,7 @@ export function writeHumanConfig(
       [options.identityName ?? "human"]: {
         defaultMode: "default",
         profiles: {
-          default: `opchain-v2:${options.identityName ?? "human"}:default`,
+          default: `opchain:${options.identityName ?? "human"}:default`,
         },
         vaults: options.vaults ?? ["Human"],
       },
@@ -156,7 +156,7 @@ export function writeAutoReadConfig(
       [identityName]: {
         defaultMode: "auto",
         profiles: {
-          read: `opchain-v2:${identityName}:read`,
+          read: `opchain:${identityName}:read`,
         },
         vaults: options.vaults ?? ["Personal"],
       },
@@ -185,8 +185,8 @@ export function writeAutoReadWriteConfig(
       [identityName]: {
         defaultMode: "auto",
         profiles: {
-          read: options.readAccount ?? `opchain-v2:${identityName}:read`,
-          write: options.writeAccount ?? `opchain-v2:${identityName}:write`,
+          read: options.readAccount ?? `opchain:${identityName}:read`,
+          write: options.writeAccount ?? `opchain:${identityName}:write`,
         },
         vaults: options.vaults ?? ["Personal", "Services"],
       },
@@ -214,18 +214,18 @@ export function writeHumanAndKevinConfig(
         defaultMode: options.kevinWriteAccount ? "auto" : "auto",
         profiles: options.kevinWriteAccount
           ? {
-              read: options.kevinReadAccount ?? "opchain-v2:kevin:read",
+              read: options.kevinReadAccount ?? "opchain:kevin:read",
               write: options.kevinWriteAccount,
             }
           : {
-              read: options.kevinReadAccount ?? "opchain-v2:kevin:read",
+              read: options.kevinReadAccount ?? "opchain:kevin:read",
             },
         vaults: options.kevinVaults ?? ["Personal"],
       },
       human: {
         defaultMode: "default",
         profiles: {
-          default: options.humanAccount ?? "opchain-v2:human:default",
+          default: options.humanAccount ?? "opchain:human:default",
         },
         vaults: options.humanVaults ?? ["Human"],
       },

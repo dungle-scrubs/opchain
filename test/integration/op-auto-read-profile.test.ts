@@ -8,7 +8,7 @@ import { writeAutoReadWriteConfig } from "../helpers/write-opchain-config.ts";
 
 describe("auto read-profile op execution", () => {
   test("resolves the read profile for an allowlisted read-safe command", () => {
-    const homePath = mkdtempSync(join(tmpdir(), "opchain-v2-home-"));
+    const homePath = mkdtempSync(join(tmpdir(), "opchain-home-"));
     const helperGetLogPath = join(homePath, "helper-get.log");
     const opLogPath = join(homePath, "op.log");
 
@@ -39,7 +39,7 @@ describe("auto read-profile op execution", () => {
     expect(result.stdout).toBe("vault list ok\n");
     expect(result.stderr).toBe("");
     expect(readFileSync(helperGetLogPath, "utf8")).toBe(
-      `${["service=opchain-v2", "account=opchain-v2:kevin:read"].join("\n")}
+      `${["service=opchain", "account=opchain:kevin:read"].join("\n")}
 `,
     );
     expect(readFileSync(opLogPath, "utf8")).toBe(

@@ -57,7 +57,7 @@ describe("parseJsonText", () => {
 
 describe("readTextFile", () => {
   test("reads UTF-8 text files", () => {
-    const directoryPath = mkdtempSync(join(tmpdir(), "opchain-v2-io-"));
+    const directoryPath = mkdtempSync(join(tmpdir(), "opchain-io-"));
     const filePath = join(directoryPath, "example.txt");
 
     writeFileSync(filePath, "hello\n", "utf8");
@@ -69,7 +69,7 @@ describe("readTextFile", () => {
   });
 
   test("returns a stable error for missing files", () => {
-    const directoryPath = mkdtempSync(join(tmpdir(), "opchain-v2-io-"));
+    const directoryPath = mkdtempSync(join(tmpdir(), "opchain-io-"));
     const filePath = join(directoryPath, "missing.txt");
     const result = readTextFile(filePath, "Failed to read file");
 
@@ -84,7 +84,7 @@ describe("readTextFile", () => {
 
 describe("expiry state IO wrappers", () => {
   test("saves and loads expiry state successfully", () => {
-    const directoryPath = mkdtempSync(join(tmpdir(), "opchain-v2-io-"));
+    const directoryPath = mkdtempSync(join(tmpdir(), "opchain-io-"));
     const statePath = join(directoryPath, "human.json");
     const state: ExpiryState = {
       identity: "human",
@@ -107,7 +107,7 @@ describe("expiry state IO wrappers", () => {
   });
 
   test("returns a stable error when the expiry state file is malformed", () => {
-    const directoryPath = mkdtempSync(join(tmpdir(), "opchain-v2-io-"));
+    const directoryPath = mkdtempSync(join(tmpdir(), "opchain-io-"));
     const statePath = join(directoryPath, "human.json");
 
     writeFileSync(statePath, "{\n", "utf8");
@@ -123,7 +123,7 @@ describe("expiry state IO wrappers", () => {
   });
 
   test("returns an empty state when the file does not exist yet", () => {
-    const directoryPath = mkdtempSync(join(tmpdir(), "opchain-v2-io-"));
+    const directoryPath = mkdtempSync(join(tmpdir(), "opchain-io-"));
     const statePath = join(directoryPath, "human.json");
 
     expect(loadExpiryStateResult(statePath, "human")).toEqual({

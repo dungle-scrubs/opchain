@@ -7,7 +7,7 @@ import { loadConfig } from "../../src/config/load-config.ts";
 
 describe("loadConfig", () => {
   test("loads a valid config file into typed domain data", async () => {
-    const directoryPath = mkdtempSync(join(tmpdir(), "opchain-v2-config-"));
+    const directoryPath = mkdtempSync(join(tmpdir(), "opchain-config-"));
     const configPath = join(directoryPath, "config.toml");
 
     writeFileSync(
@@ -24,10 +24,10 @@ describe("loadConfig", () => {
         'vaults = ["Personal", "Services"]',
         "",
         "[identities.kevin.profiles.read]",
-        'keychain_account = "opchain-v2:kevin:read"',
+        'keychain_account = "opchain:kevin:read"',
         "",
         "[identities.kevin.profiles.write]",
-        'keychain_account = "opchain-v2:kevin:write"',
+        'keychain_account = "opchain:kevin:write"',
       ].join("\n"),
       "utf8",
     );
@@ -42,7 +42,7 @@ describe("loadConfig", () => {
     expect(result.value.defaults.projectsDir).toBe("/Users/kevin/dev");
     expect(result.value.identities.kevin?.defaultMode).toBe("auto");
     expect(result.value.identities.kevin?.profiles.read?.keychainAccount).toBe(
-      "opchain-v2:kevin:read",
+      "opchain:kevin:read",
     );
     expect(result.value.identities.kevin?.vaults).toEqual([
       "Personal",
@@ -51,7 +51,7 @@ describe("loadConfig", () => {
   });
 
   test("returns a precise error for an invalid nested profile field", async () => {
-    const directoryPath = mkdtempSync(join(tmpdir(), "opchain-v2-config-"));
+    const directoryPath = mkdtempSync(join(tmpdir(), "opchain-config-"));
     const configPath = join(directoryPath, "config.toml");
 
     writeFileSync(

@@ -9,8 +9,8 @@ import { writeHumanConfig } from "../helpers/write-opchain-config.ts";
 describe("secrets validate", () => {
   test("validates unique refs across the current working directory", () => {
     const repoPath = process.cwd();
-    const homePath = mkdtempSync(join(tmpdir(), "opchain-v2-home-"));
-    const projectPath = mkdtempSync(join(tmpdir(), "opchain-v2-project-"));
+    const homePath = mkdtempSync(join(tmpdir(), "opchain-home-"));
+    const projectPath = mkdtempSync(join(tmpdir(), "opchain-project-"));
     const nestedProjectPath = join(projectPath, "apps", "demo");
     const helperGetLogPath = join(homePath, "helper-get-secrets-validate.log");
     const opReadLogPath = join(homePath, "op-validate.log");
@@ -70,8 +70,8 @@ describe("secrets validate", () => {
   });
 
   test("validates only the explicit file path when one is provided", () => {
-    const homePath = mkdtempSync(join(tmpdir(), "opchain-v2-home-"));
-    const projectPath = mkdtempSync(join(tmpdir(), "opchain-v2-project-"));
+    const homePath = mkdtempSync(join(tmpdir(), "opchain-home-"));
+    const projectPath = mkdtempSync(join(tmpdir(), "opchain-project-"));
     const envOpPath = join(projectPath, ".env.op");
     const helperGetLogPath = join(
       homePath,
@@ -128,7 +128,7 @@ describe("secrets validate", () => {
   });
 
   test("fails cleanly when the explicit scan target does not exist", () => {
-    const homePath = mkdtempSync(join(tmpdir(), "opchain-v2-home-"));
+    const homePath = mkdtempSync(join(tmpdir(), "opchain-home-"));
     const missingPath = join(homePath, "does-not-exist");
 
     writeHumanConfig(homePath);

@@ -58,7 +58,7 @@ function writeLegacyExpires(homePath: string, lines: readonly string[]): string 
 
 describe("buildMigrationPlan", () => {
   test("returns an error when the legacy config is missing", async () => {
-    const homePath = mkdtempSync(join(tmpdir(), "opchain-v2-home-"));
+    const homePath = mkdtempSync(join(tmpdir(), "opchain-home-"));
     const legacyConfigPath = join(homePath, ".config", "opchain", "config");
     const legacyExpiresPath = join(homePath, ".config", "opchain", "expires");
 
@@ -79,7 +79,7 @@ describe("buildMigrationPlan", () => {
   });
 
   test("builds a migration plan with canonical expiry items", async () => {
-    const homePath = mkdtempSync(join(tmpdir(), "opchain-v2-home-"));
+    const homePath = mkdtempSync(join(tmpdir(), "opchain-home-"));
     const legacyConfigPath = writeLegacyConfig(homePath, [
       "projects_dir=~/dev",
       "read_account=opchain-read",
@@ -145,7 +145,7 @@ describe("buildMigrationPlan", () => {
   });
 
   test("marks the plan as non-applicable when legacy read_account is missing", async () => {
-    const homePath = mkdtempSync(join(tmpdir(), "opchain-v2-home-"));
+    const homePath = mkdtempSync(join(tmpdir(), "opchain-home-"));
     const legacyConfigPath = writeLegacyConfig(homePath, [
       "projects_dir=~/dev",
       "write_account=opchain-write",

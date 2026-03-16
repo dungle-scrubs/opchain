@@ -6,15 +6,15 @@ import { spawnSync } from "node:child_process";
 
 describe("migrate-v1 apply", () => {
   test("writes v2 config and canonical expiry state", () => {
-    const homePath = mkdtempSync(join(tmpdir(), "opchain-v2-home-"));
+    const homePath = mkdtempSync(join(tmpdir(), "opchain-home-"));
     const legacyConfigDirectoryPath = join(homePath, ".config", "opchain");
     const legacyConfigPath = join(legacyConfigDirectoryPath, "config");
     const legacyExpiresPath = join(legacyConfigDirectoryPath, "expires");
-    const v2ConfigPath = join(homePath, ".config", "opchain-v2", "config.toml");
+    const v2ConfigPath = join(homePath, ".config", "opchain", "config.toml");
     const v2ExpiresPath = join(
       homePath,
       ".config",
-      "opchain-v2",
+      "opchain",
       "state",
       "expires",
       "kevin.json",

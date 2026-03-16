@@ -9,8 +9,8 @@ import { writeHumanConfig } from "../helpers/write-opchain-config.ts";
 describe("secrets validate .env warning", () => {
   test("warns when a scanned directory contains .env but not .env.op", () => {
     const repoPath = process.cwd();
-    const homePath = mkdtempSync(join(tmpdir(), "opchain-v2-home-"));
-    const projectPath = mkdtempSync(join(tmpdir(), "opchain-v2-project-"));
+    const homePath = mkdtempSync(join(tmpdir(), "opchain-home-"));
+    const projectPath = mkdtempSync(join(tmpdir(), "opchain-project-"));
     const appPath = join(projectPath, "apps", "demo");
 
     writeHumanConfig(homePath);

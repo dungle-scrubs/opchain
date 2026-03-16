@@ -37,7 +37,7 @@ export async function resolveTokenForAccount(
     },
     helperPath: resolveHelperPath(),
     securityPath: resolveSecurityPath(),
-    serviceName: "opchain-v2",
+    serviceName: "opchain",
   });
   if (!tokenResult.ok) {
     return {

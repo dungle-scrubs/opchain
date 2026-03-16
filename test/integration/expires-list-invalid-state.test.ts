@@ -6,11 +6,11 @@ import { spawnSync } from "node:child_process";
 
 describe("expires list invalid state", () => {
   test("fails cleanly when the expiry state file is malformed", () => {
-    const homePath = mkdtempSync(join(tmpdir(), "opchain-v2-home-"));
+    const homePath = mkdtempSync(join(tmpdir(), "opchain-home-"));
     const stateDirectoryPath = join(
       homePath,
       ".config",
-      "opchain-v2",
+      "opchain",
       "state",
       "expires",
     );

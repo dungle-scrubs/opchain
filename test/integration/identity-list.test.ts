@@ -8,7 +8,7 @@ import { spawnSync } from "node:child_process";
 
 describe("identity list", () => {
   test("prints configured identities from config.toml", () => {
-    const homePath = mkdtempSync(join(tmpdir(), "opchain-v2-home-"));
+    const homePath = mkdtempSync(join(tmpdir(), "opchain-home-"));
     writeHumanAndKevinConfig(homePath);
 
     const result = spawnSync(

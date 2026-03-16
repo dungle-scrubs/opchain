@@ -120,7 +120,7 @@ export async function runTokenRemove(options: CliOptions): Promise<number> {
   const removeResult = await removeTokenWithHelper({
     accountName: resolvedAccount.accountName,
     helperPath: resolveHelperPath(),
-    serviceName: "opchain-v2",
+    serviceName: "opchain",
   });
   if (!removeResult.ok) {
     process.stderr.write(`${removeResult.error.message}\n`);

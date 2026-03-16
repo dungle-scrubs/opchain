@@ -24,7 +24,7 @@ function parseEvents(stderr: string): readonly TelemetryEvent[] {
 
 describe("migrate-v1 debug json", () => {
   test("emits migration.plan telemetry for dry-run", () => {
-    const homePath = mkdtempSync(join(tmpdir(), "opchain-v2-home-"));
+    const homePath = mkdtempSync(join(tmpdir(), "opchain-home-"));
     const legacyConfigDirectoryPath = join(homePath, ".config", "opchain");
     const legacyConfigPath = join(legacyConfigDirectoryPath, "config");
 
@@ -69,7 +69,7 @@ describe("migrate-v1 debug json", () => {
   });
 
   test("emits migration.apply telemetry for apply mode", () => {
-    const homePath = mkdtempSync(join(tmpdir(), "opchain-v2-home-"));
+    const homePath = mkdtempSync(join(tmpdir(), "opchain-home-"));
     const legacyConfigDirectoryPath = join(homePath, ".config", "opchain");
     const legacyConfigPath = join(legacyConfigDirectoryPath, "config");
     const legacyExpiresPath = join(legacyConfigDirectoryPath, "expires");
