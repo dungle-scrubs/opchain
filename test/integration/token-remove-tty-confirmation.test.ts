@@ -8,7 +8,7 @@ import { writeAutoReadConfig } from "../helpers/write-opchain-config.ts";
 
 describe("token remove TTY confirmation", () => {
   test("removes a token after interactive confirmation", () => {
-    const homePath = mkdtempSync(join(tmpdir(), "opchain-v2-home-"));
+    const homePath = mkdtempSync(join(tmpdir(), "opchain-home-"));
     const helperRemoveLogPath = join(homePath, "helper-remove-tty.log");
 
     writeAutoReadConfig(homePath);
@@ -44,13 +44,13 @@ describe("token remove TTY confirmation", () => {
     expect(result.stdout).toContain("Remove token for kevin.read? [y/N] ");
     expect(result.stdout).toContain("Removed token for kevin.read.");
     expect(readFileSync(helperRemoveLogPath, "utf8")).toBe(
-      `${["service=opchain-v2", "account=opchain-v2:kevin:read"].join("\n")}
+      `${["service=opchain", "account=opchain:kevin:read"].join("\n")}
 `,
     );
   });
 
   test("cancels removal when confirmation is declined", () => {
-    const homePath = mkdtempSync(join(tmpdir(), "opchain-v2-home-"));
+    const homePath = mkdtempSync(join(tmpdir(), "opchain-home-"));
     const helperRemoveLogPath = join(homePath, "helper-remove-cancel.log");
 
     writeAutoReadConfig(homePath);

@@ -8,7 +8,7 @@ import { writeAutoReadWriteConfig } from "../helpers/write-opchain-config.ts";
 
 describe("explicit write-profile op execution", () => {
   test("resolves the write profile when --write is passed", () => {
-    const homePath = mkdtempSync(join(tmpdir(), "opchain-v2-home-"));
+    const homePath = mkdtempSync(join(tmpdir(), "opchain-home-"));
     const helperGetLogPath = join(homePath, "helper-get-write.log");
     const opLogPath = join(homePath, "op-write.log");
 
@@ -50,7 +50,7 @@ describe("explicit write-profile op execution", () => {
     expect(result.stdout).toBe("item edit ok\n");
     expect(result.stderr).toBe("");
     expect(readFileSync(helperGetLogPath, "utf8")).toBe(
-      `${["service=opchain-v2", "account=opchain-v2:kevin:write"].join("\n")}
+      `${["service=opchain", "account=opchain:kevin:write"].join("\n")}
 `,
     );
     expect(readFileSync(opLogPath, "utf8")).toBe(

@@ -26,7 +26,7 @@ function parseEvents(stderr: string): readonly TelemetryEvent[] {
 
 describe("op debug json", () => {
   test("emits classification and execution telemetry without child output", () => {
-    const homePath = mkdtempSync(join(tmpdir(), "opchain-v2-home-"));
+    const homePath = mkdtempSync(join(tmpdir(), "opchain-home-"));
     writeHumanConfig(homePath);
 
     const result = spawnSync(

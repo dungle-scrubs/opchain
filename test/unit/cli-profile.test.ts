@@ -24,23 +24,23 @@ function createConfig(): Config {
       auto: {
         defaultMode: "auto",
         profiles: {
-          read: { keychainAccount: "opchain-v2:auto:read" },
-          write: { keychainAccount: "opchain-v2:auto:write" },
+          read: { keychainAccount: "opchain:auto:read" },
+          write: { keychainAccount: "opchain:auto:write" },
         },
         vaults: ["Services"],
       },
       default: {
         defaultMode: "default",
         profiles: {
-          default: { keychainAccount: "opchain-v2:default:default" },
+          default: { keychainAccount: "opchain:default:default" },
         },
         vaults: ["Human"],
       },
       explicit: {
         defaultMode: "default",
         profiles: {
-          admin: { keychainAccount: "opchain-v2:explicit:admin" },
-          auditor: { keychainAccount: "opchain-v2:explicit:auditor" },
+          admin: { keychainAccount: "opchain:explicit:admin" },
+          auditor: { keychainAccount: "opchain:explicit:auditor" },
         },
         vaults: ["Audit"],
       },
@@ -69,7 +69,7 @@ describe("resolveOpProfile", () => {
         "auditor",
       ),
     ).toEqual({
-      accountName: "opchain-v2:explicit:auditor",
+      accountName: "opchain:explicit:auditor",
       profileName: "auditor",
     });
   });
@@ -78,7 +78,7 @@ describe("resolveOpProfile", () => {
     expect(
       resolveOpProfile(createConfig(), "auto", "read_safe", "write", undefined),
     ).toEqual({
-      accountName: "opchain-v2:auto:write",
+      accountName: "opchain:auto:write",
       profileName: "write",
     });
   });
@@ -93,7 +93,7 @@ describe("resolveOpProfile", () => {
         undefined,
       ),
     ).toEqual({
-      accountName: "opchain-v2:default:default",
+      accountName: "opchain:default:default",
       profileName: "default",
     });
   });
@@ -108,7 +108,7 @@ describe("resolveOpProfile", () => {
         undefined,
       ),
     ).toEqual({
-      accountName: "opchain-v2:auto:read",
+      accountName: "opchain:auto:read",
       profileName: "read",
     });
   });
@@ -167,7 +167,7 @@ describe("resolveOpProfile", () => {
 describe("resolveConfiguredAccount", () => {
   test("resolves a configured keychain account", () => {
     expect(resolveConfiguredAccount(createConfig(), "explicit", "admin")).toEqual({
-      accountName: "opchain-v2:explicit:admin",
+      accountName: "opchain:explicit:admin",
     });
   });
 

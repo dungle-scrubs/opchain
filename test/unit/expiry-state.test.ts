@@ -11,7 +11,7 @@ import {
 
 describe("expiry state", () => {
   test("persists one canonical tracked item with atomic writes", () => {
-    const directoryPath = mkdtempSync(join(tmpdir(), "opchain-v2-expires-"));
+    const directoryPath = mkdtempSync(join(tmpdir(), "opchain-expires-"));
     const statePath = join(directoryPath, "human.json");
     const state: ExpiryState = {
       identity: "human",

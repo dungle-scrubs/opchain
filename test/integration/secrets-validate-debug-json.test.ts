@@ -27,8 +27,8 @@ function parseEvents(stderr: string): readonly TelemetryEvent[] {
 describe("secrets validate debug json", () => {
   test("emits scan and validation telemetry without leaking refs", () => {
     const repoPath = process.cwd();
-    const homePath = mkdtempSync(join(tmpdir(), "opchain-v2-home-"));
-    const projectPath = mkdtempSync(join(tmpdir(), "opchain-v2-project-"));
+    const homePath = mkdtempSync(join(tmpdir(), "opchain-home-"));
+    const projectPath = mkdtempSync(join(tmpdir(), "opchain-project-"));
     writeHumanConfig(homePath);
     writeFileSync(
       join(projectPath, ".env.op"),

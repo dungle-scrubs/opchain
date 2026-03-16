@@ -8,7 +8,7 @@ import { writeHumanConfig } from "../helpers/write-opchain-config.ts";
 
 describe("op allow-env-token", () => {
   test("uses OPCHAIN_TOKEN_OVERRIDE when --allow-env-token is passed", () => {
-    const homePath = mkdtempSync(join(tmpdir(), "opchain-v2-home-"));
+    const homePath = mkdtempSync(join(tmpdir(), "opchain-home-"));
     const helperGetLogPath = join(homePath, "helper-get-override.log");
     const opLogPath = join(homePath, "op-override.log");
 

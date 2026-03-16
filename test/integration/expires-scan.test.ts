@@ -8,11 +8,11 @@ import { writeHumanConfig } from "../helpers/write-opchain-config.ts";
 
 describe("expires scan", () => {
   test("updates tracked items from fake op metadata and classifies expiring status", () => {
-    const homePath = mkdtempSync(join(tmpdir(), "opchain-v2-home-"));
+    const homePath = mkdtempSync(join(tmpdir(), "opchain-home-"));
     const statePath = join(
       homePath,
       ".config",
-      "opchain-v2",
+      "opchain",
       "state",
       "expires",
       "human.json",
@@ -21,7 +21,7 @@ describe("expires scan", () => {
       Date.now() + 3 * 24 * 60 * 60 * 1000,
     ).toISOString();
 
-    mkdirSync(join(homePath, ".config", "opchain-v2", "state", "expires"), {
+    mkdirSync(join(homePath, ".config", "opchain", "state", "expires"), {
       recursive: true,
     });
     writeHumanConfig(homePath);
@@ -101,17 +101,17 @@ describe("expires scan", () => {
   });
 
   test("fails cleanly when op returns malformed item JSON", () => {
-    const homePath = mkdtempSync(join(tmpdir(), "opchain-v2-home-"));
+    const homePath = mkdtempSync(join(tmpdir(), "opchain-home-"));
     const statePath = join(
       homePath,
       ".config",
-      "opchain-v2",
+      "opchain",
       "state",
       "expires",
       "human.json",
     );
 
-    mkdirSync(join(homePath, ".config", "opchain-v2", "state", "expires"), {
+    mkdirSync(join(homePath, ".config", "opchain", "state", "expires"), {
       recursive: true,
     });
     writeHumanConfig(homePath);

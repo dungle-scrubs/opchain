@@ -8,7 +8,7 @@ import { writeAutoReadConfig } from "../helpers/write-opchain-config.ts";
 
 describe("token set --stdin", () => {
   test("stores a token through the helper backend without argv token input", () => {
-    const homePath = mkdtempSync(join(tmpdir(), "opchain-v2-home-"));
+    const homePath = mkdtempSync(join(tmpdir(), "opchain-home-"));
     const helperWriteLogPath = join(homePath, "helper-write.log");
 
     writeAutoReadConfig(homePath);
@@ -48,8 +48,8 @@ describe("token set --stdin", () => {
     expect(result.stderr).toBe("");
     expect(readFileSync(helperWriteLogPath, "utf8")).toBe(
       `${[
-        "service=opchain-v2",
-        "account=opchain-v2:kevin:read",
+        "service=opchain",
+        "account=opchain:kevin:read",
         "token=token-from-stdin",
       ].join("\n")}
 `,

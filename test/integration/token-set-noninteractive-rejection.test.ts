@@ -8,7 +8,7 @@ import { writeAutoReadConfig } from "../helpers/write-opchain-config.ts";
 
 describe("token set non-interactive rejection", () => {
   test("requires --stdin or an interactive TTY", () => {
-    const homePath = mkdtempSync(join(tmpdir(), "opchain-v2-home-"));
+    const homePath = mkdtempSync(join(tmpdir(), "opchain-home-"));
     writeAutoReadConfig(homePath);
 
     const result = spawnSync(

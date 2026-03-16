@@ -6,7 +6,7 @@ import { spawnSync } from "node:child_process";
 
 describe("migrate-v1 --dry-run expiry import", () => {
   test("resolves legacy expiry records into canonical IDs", () => {
-    const homePath = mkdtempSync(join(tmpdir(), "opchain-v2-home-"));
+    const homePath = mkdtempSync(join(tmpdir(), "opchain-home-"));
     const legacyConfigDirectoryPath = join(homePath, ".config", "opchain");
     const legacyConfigPath = join(legacyConfigDirectoryPath, "config");
     const legacyExpiresPath = join(legacyConfigDirectoryPath, "expires");

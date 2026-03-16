@@ -25,12 +25,12 @@ function parseEvents(stderr: string): readonly { readonly name: string }[] {
 
 describe("loadConfigContext", () => {
   test("loads config through the explicit config path override and emits telemetry", async () => {
-    const homePath = mkdtempSync(join(tmpdir(), "opchain-v2-home-"));
+    const homePath = mkdtempSync(join(tmpdir(), "opchain-home-"));
     const configPath = writeHomeConfig(homePath, {
       identities: {
         human: {
           defaultMode: "default",
-          profiles: { default: "opchain-v2:human:default" },
+          profiles: { default: "opchain:human:default" },
           vaults: ["Human"],
         },
       },
@@ -60,12 +60,12 @@ describe("loadConfigContext", () => {
       "config.load",
       "identity.resolve",
     ]);
-    expect(stderr).not.toContain("opchain-v2:human:default");
+    expect(stderr).not.toContain("opchain:human:default");
   });
 
   test("returns a printable error when the config file is missing", async () => {
     const configPath = join(
-      mkdtempSync(join(tmpdir(), "opchain-v2-config-")),
+      mkdtempSync(join(tmpdir(), "opchain-config-")),
       "missing.toml",
     );
 

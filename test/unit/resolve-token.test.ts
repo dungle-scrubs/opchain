@@ -10,11 +10,11 @@ describe("resolveToken", () => {
     process.env.OPCHAIN_TEST_SECURITY_TOKEN = "token-from-security";
 
     const result = await resolveToken({
-      accountName: "opchain-v2:kevin:read",
+      accountName: "opchain:kevin:read",
       allowEnvToken: true,
       helperPath: join(process.cwd(), "test/fixtures/bin/opchain-helper"),
       securityPath: join(process.cwd(), "test/fixtures/bin/security"),
-      serviceName: "opchain-v2",
+      serviceName: "opchain",
     });
 
     delete process.env.OPCHAIN_TOKEN_OVERRIDE;
@@ -34,11 +34,11 @@ describe("resolveToken", () => {
     process.env.OPCHAIN_TEST_HELPER_TOKEN = "token-from-helper";
 
     const result = await resolveToken({
-      accountName: "opchain-v2:kevin:read",
+      accountName: "opchain:kevin:read",
       allowEnvToken: false,
       helperPath: join(process.cwd(), "test/fixtures/bin/opchain-helper"),
       securityPath: join(process.cwd(), "test/fixtures/bin/security"),
-      serviceName: "opchain-v2",
+      serviceName: "opchain",
     });
 
     delete process.env.OPCHAIN_TOKEN_OVERRIDE;
@@ -57,11 +57,11 @@ describe("resolveToken", () => {
     process.env.OPCHAIN_TEST_SECURITY_TOKEN = "token-from-security";
 
     const result = await resolveToken({
-      accountName: "opchain-v2:kevin:read",
+      accountName: "opchain:kevin:read",
       allowEnvToken: false,
       helperPath: join(process.cwd(), "test/fixtures/bin/opchain-helper"),
       securityPath: join(process.cwd(), "test/fixtures/bin/security"),
-      serviceName: "opchain-v2",
+      serviceName: "opchain",
     });
 
     delete process.env.OPCHAIN_TEST_HELPER_TOKEN;
@@ -79,11 +79,11 @@ describe("resolveToken", () => {
     process.env.OPCHAIN_TEST_SECURITY_TOKEN = "token-from-security";
 
     const result = await resolveToken({
-      accountName: "opchain-v2:kevin:read",
+      accountName: "opchain:kevin:read",
       allowEnvToken: false,
       helperPath: join(process.cwd(), "test/fixtures/bin/does-not-exist"),
       securityPath: join(process.cwd(), "test/fixtures/bin/security"),
-      serviceName: "opchain-v2",
+      serviceName: "opchain",
     });
 
     delete process.env.OPCHAIN_TEST_SECURITY_TOKEN;
@@ -104,11 +104,11 @@ describe("resolveToken", () => {
       "security leaked token-from-security";
 
     const result = await resolveToken({
-      accountName: "opchain-v2:kevin:read",
+      accountName: "opchain:kevin:read",
       allowEnvToken: false,
       helperPath: join(process.cwd(), "test/fixtures/bin/opchain-helper"),
       securityPath: join(process.cwd(), "test/fixtures/bin/security"),
-      serviceName: "opchain-v2",
+      serviceName: "opchain",
     });
 
     delete process.env.OPCHAIN_TEST_HELPER_EXIT_CODE;

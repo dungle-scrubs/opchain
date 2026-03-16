@@ -26,11 +26,11 @@ function parseEvents(stderr: string): readonly TelemetryEvent[] {
 
 describe("expires scan debug json", () => {
   test("emits scan and threshold telemetry without leaking secrets", () => {
-    const homePath = mkdtempSync(join(tmpdir(), "opchain-v2-home-"));
+    const homePath = mkdtempSync(join(tmpdir(), "opchain-home-"));
     const statePath = join(
       homePath,
       ".config",
-      "opchain-v2",
+      "opchain",
       "state",
       "expires",
       "human.json",
@@ -39,7 +39,7 @@ describe("expires scan debug json", () => {
       Date.now() + 3 * 24 * 60 * 60 * 1000,
     ).toISOString();
 
-    mkdirSync(join(homePath, ".config", "opchain-v2", "state", "expires"), {
+    mkdirSync(join(homePath, ".config", "opchain", "state", "expires"), {
       recursive: true,
     });
     writeHumanConfig(homePath);

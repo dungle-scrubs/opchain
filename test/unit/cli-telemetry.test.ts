@@ -28,15 +28,15 @@ function createConfig(): Config {
       auto: {
         defaultMode: "auto",
         profiles: {
-          read: { keychainAccount: "opchain-v2:auto:read" },
-          write: { keychainAccount: "opchain-v2:auto:write" },
+          read: { keychainAccount: "opchain:auto:read" },
+          write: { keychainAccount: "opchain:auto:write" },
         },
         vaults: ["Services"],
       },
       human: {
         defaultMode: "default",
         profiles: {
-          default: { keychainAccount: "opchain-v2:human:default" },
+          default: { keychainAccount: "opchain:human:default" },
         },
         vaults: ["Human"],
       },
@@ -160,7 +160,7 @@ describe("config and identity telemetry", () => {
       },
       name: "identity.resolve",
     });
-    expect(stderr).not.toContain("opchain-v2:auto:read");
-    expect(stderr).not.toContain("opchain-v2:human:default");
+    expect(stderr).not.toContain("opchain:auto:read");
+    expect(stderr).not.toContain("opchain:human:default");
   });
 });

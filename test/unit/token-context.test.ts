@@ -41,7 +41,7 @@ describe("resolveTokenForAccount", () => {
         captureStderr(async () =>
           resolveTokenForAccount(
             createCliOptions({ debug: true, debugFormat: "json" }),
-            "opchain-v2:auto:read",
+            "opchain:auto:read",
             false,
           ),
         ),
@@ -68,7 +68,7 @@ describe("resolveTokenForAccount", () => {
         OPCHAIN_TEST_SECURITY_STDERR: "security leaked token",
       },
       async () =>
-        resolveTokenForAccount(createCliOptions(), "opchain-v2:auto:read", false),
+        resolveTokenForAccount(createCliOptions(), "opchain:auto:read", false),
     );
 
     expect(result.ok).toBe(false);
@@ -85,22 +85,22 @@ describe("resolveTokenForAccount", () => {
 describe("identity context helpers", () => {
   test("resolves the read identity context with config, profile, and token", async () => {
     const configPath = writeHomeConfig(
-      mkdtempSync(join(tmpdir(), "opchain-v2-home-")),
+      mkdtempSync(join(tmpdir(), "opchain-home-")),
       {
         identities: {
           auto: {
             defaultMode: "auto",
             profiles: {
-              read: "opchain-v2:auto:read",
-              write: "opchain-v2:auto:write",
+              read: "opchain:auto:read",
+              write: "opchain:auto:write",
             },
             vaults: ["Services"],
           },
           explicit: {
             defaultMode: "default",
             profiles: {
-              admin: "opchain-v2:explicit:admin",
-              auditor: "opchain-v2:explicit:auditor",
+              admin: "opchain:explicit:admin",
+              auditor: "opchain:explicit:auditor",
             },
             vaults: ["Audit"],
           },
@@ -127,7 +127,7 @@ describe("identity context helpers", () => {
 
     expect(result.value.configPath).toBe(configPath);
     expect(result.value.resolvedProfile).toEqual({
-      accountName: "opchain-v2:auto:read",
+      accountName: "opchain:auto:read",
       profileName: "read",
     });
     expect(result.value.token).toBe("token-from-helper");
@@ -135,22 +135,22 @@ describe("identity context helpers", () => {
 
   test("returns profile resolution errors without attempting token lookup", async () => {
     const configPath = writeHomeConfig(
-      mkdtempSync(join(tmpdir(), "opchain-v2-home-")),
+      mkdtempSync(join(tmpdir(), "opchain-home-")),
       {
         identities: {
           auto: {
             defaultMode: "auto",
             profiles: {
-              read: "opchain-v2:auto:read",
-              write: "opchain-v2:auto:write",
+              read: "opchain:auto:read",
+              write: "opchain:auto:write",
             },
             vaults: ["Services"],
           },
           explicit: {
             defaultMode: "default",
             profiles: {
-              admin: "opchain-v2:explicit:admin",
-              auditor: "opchain-v2:explicit:auditor",
+              admin: "opchain:explicit:admin",
+              auditor: "opchain:explicit:auditor",
             },
             vaults: ["Audit"],
           },

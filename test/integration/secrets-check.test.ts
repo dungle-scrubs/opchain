@@ -8,8 +8,8 @@ import { writeHomeConfig } from "../helpers/write-opchain-config.ts";
 
 describe("secrets check", () => {
   test("validates unique refs once per run", () => {
-    const homePath = mkdtempSync(join(tmpdir(), "opchain-v2-home-"));
-    const projectPath = mkdtempSync(join(tmpdir(), "opchain-v2-project-"));
+    const homePath = mkdtempSync(join(tmpdir(), "opchain-home-"));
+    const projectPath = mkdtempSync(join(tmpdir(), "opchain-project-"));
     const envOpPath = join(projectPath, ".env.op");
     const helperGetLogPath = join(homePath, "helper-get-secrets-check.log");
     const opReadLogPath = join(homePath, "op-read.log");
@@ -18,7 +18,7 @@ describe("secrets check", () => {
       identities: {
         human: {
           defaultMode: "default",
-          profiles: { default: "opchain-v2:human:default" },
+          profiles: { default: "opchain:human:default" },
           vaults: ["Human"],
         },
       },
@@ -64,7 +64,7 @@ describe("secrets check", () => {
     );
     expect(result.stderr).toBe("");
     expect(readFileSync(helperGetLogPath, "utf8")).toBe(
-      `${["service=opchain-v2", "account=opchain-v2:human:default"].join("\n")}
+      `${["service=opchain", "account=opchain:human:default"].join("\n")}
 `,
     );
     expect(readFileSync(opReadLogPath, "utf8")).toBe(
@@ -76,15 +76,15 @@ describe("secrets check", () => {
   });
 
   test("fails closed when op read returns an operational error", () => {
-    const homePath = mkdtempSync(join(tmpdir(), "opchain-v2-home-"));
-    const projectPath = mkdtempSync(join(tmpdir(), "opchain-v2-project-"));
+    const homePath = mkdtempSync(join(tmpdir(), "opchain-home-"));
+    const projectPath = mkdtempSync(join(tmpdir(), "opchain-project-"));
     const envOpPath = join(projectPath, ".env.op");
 
     writeHomeConfig(homePath, {
       identities: {
         human: {
           defaultMode: "default",
-          profiles: { default: "opchain-v2:human:default" },
+          profiles: { default: "opchain:human:default" },
           vaults: ["Human"],
         },
       },

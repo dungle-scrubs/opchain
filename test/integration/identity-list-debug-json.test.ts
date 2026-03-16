@@ -26,7 +26,7 @@ function parseEvents(stderr: string): readonly TelemetryEvent[] {
 
 describe("identity list debug json", () => {
   test("emits redacted config and identity events", () => {
-    const homePath = mkdtempSync(join(tmpdir(), "opchain-v2-home-"));
+    const homePath = mkdtempSync(join(tmpdir(), "opchain-home-"));
     writeHumanAndKevinConfig(homePath);
 
     const result = spawnSync(
@@ -54,7 +54,7 @@ describe("identity list debug json", () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toBe("kevin\nhuman\n");
     expect(result.stderr).not.toContain("SHOULD_NOT_LEAK");
-    expect(result.stderr).not.toContain("opchain-v2:kevin:read");
+    expect(result.stderr).not.toContain("opchain:kevin:read");
     expect(result.stderr).not.toContain("Personal");
 
     const events = parseEvents(result.stderr);

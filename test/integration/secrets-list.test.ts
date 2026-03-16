@@ -8,15 +8,15 @@ import { writeHomeConfig } from "../helpers/write-opchain-config.ts";
 
 describe("secrets list", () => {
   test("lists unique op:// refs from a .env.op file", () => {
-    const homePath = mkdtempSync(join(tmpdir(), "opchain-v2-home-"));
-    const projectPath = mkdtempSync(join(tmpdir(), "opchain-v2-project-"));
+    const homePath = mkdtempSync(join(tmpdir(), "opchain-home-"));
+    const projectPath = mkdtempSync(join(tmpdir(), "opchain-project-"));
     const envOpPath = join(projectPath, ".env.op");
 
     writeHomeConfig(homePath, {
       identities: {
         human: {
           defaultMode: "default",
-          profiles: { default: "opchain-v2:human:default" },
+          profiles: { default: "opchain:human:default" },
           vaults: ["Human"],
         },
       },

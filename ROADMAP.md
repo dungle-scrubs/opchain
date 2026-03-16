@@ -420,15 +420,15 @@ Use a file-based design. Do not add SQLite unless a real data problem shows up.
 ## Config path
 
 ```text
-~/.config/opchain-v2/config.toml
+~/.config/opchain/config.toml
 ```
 
 ## State paths
 
 ```text
-~/.config/opchain-v2/state/expires/<identity>.json
-~/.config/opchain-v2/state/locks/
-~/.config/opchain-v2/cache/
+~/.config/opchain/state/expires/<identity>.json
+~/.config/opchain/state/locks/
+~/.config/opchain/cache/
 ```
 
 Notes:
@@ -441,16 +441,16 @@ Notes:
 
 Use one service name and structured account names.
 
-- service: `opchain-v2`
-- account format: `opchain-v2:<identity>:<profile>`
+- service: `opchain`
+- account format: `opchain:<identity>:<profile>`
 
 Examples:
 
-- `opchain-v2:kevin:read`
-- `opchain-v2:kevin:write`
-- `opchain-v2:human:default`
-- `opchain-v2:marrow:default`
-- `opchain-v2:marcusthorn:default`
+- `opchain:kevin:read`
+- `opchain:kevin:write`
+- `opchain:human:default`
+- `opchain:marrow:default`
+- `opchain:marcusthorn:default`
 
 ## Config semantics
 
@@ -484,31 +484,31 @@ default_mode = "auto"
 vaults = ["Personal", "SSH", "Services", "Models", "Infra"]
 
 [identities.kevin.profiles.read]
-keychain_account = "opchain-v2:kevin:read"
+keychain_account = "opchain:kevin:read"
 
 [identities.kevin.profiles.write]
-keychain_account = "opchain-v2:kevin:write"
+keychain_account = "opchain:kevin:write"
 
 [identities.human]
 default_mode = "default"
 vaults = ["Human"]
 
 [identities.human.profiles.default]
-keychain_account = "opchain-v2:human:default"
+keychain_account = "opchain:human:default"
 
 [identities.marrow]
 default_mode = "default"
 vaults = ["Marrow", "Marrow-Models", "Marrow-Services"]
 
 [identities.marrow.profiles.default]
-keychain_account = "opchain-v2:marrow:default"
+keychain_account = "opchain:marrow:default"
 
 [identities.marcusthorn]
 default_mode = "default"
 vaults = ["MarcusThorn"]
 
 [identities.marcusthorn.profiles.default]
-keychain_account = "opchain-v2:marcusthorn:default"
+keychain_account = "opchain:marcusthorn:default"
 ```
 
 ## Architecture

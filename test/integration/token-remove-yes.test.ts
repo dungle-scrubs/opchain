@@ -8,7 +8,7 @@ import { writeAutoReadConfig } from "../helpers/write-opchain-config.ts";
 
 describe("token remove --yes", () => {
   test("removes a token through the helper backend", () => {
-    const homePath = mkdtempSync(join(tmpdir(), "opchain-v2-home-"));
+    const homePath = mkdtempSync(join(tmpdir(), "opchain-home-"));
     const helperRemoveLogPath = join(homePath, "helper-remove.log");
 
     writeAutoReadConfig(homePath);
@@ -45,7 +45,7 @@ describe("token remove --yes", () => {
     expect(result.stdout).toBe("Removed token for kevin.read.\n");
     expect(result.stderr).toBe("");
     expect(readFileSync(helperRemoveLogPath, "utf8")).toBe(
-      `${["service=opchain-v2", "account=opchain-v2:kevin:read"].join("\n")}
+      `${["service=opchain", "account=opchain:kevin:read"].join("\n")}
 `,
     );
   });

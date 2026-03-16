@@ -6,10 +6,10 @@ import { spawnSync } from "node:child_process";
 
 describe("migrate-v1 apply guard", () => {
   test("fails clearly when v2 targets already exist", () => {
-    const homePath = mkdtempSync(join(tmpdir(), "opchain-v2-home-"));
+    const homePath = mkdtempSync(join(tmpdir(), "opchain-home-"));
     const legacyConfigDirectoryPath = join(homePath, ".config", "opchain");
     const legacyConfigPath = join(legacyConfigDirectoryPath, "config");
-    const v2ConfigDirectoryPath = join(homePath, ".config", "opchain-v2");
+    const v2ConfigDirectoryPath = join(homePath, ".config", "opchain");
     const v2ConfigPath = join(v2ConfigDirectoryPath, "config.toml");
 
     mkdirSync(legacyConfigDirectoryPath, { recursive: true });

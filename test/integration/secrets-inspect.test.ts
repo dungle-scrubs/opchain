@@ -8,13 +8,13 @@ import { writeHomeConfig } from "../helpers/write-opchain-config.ts";
 
 describe("secrets inspect", () => {
   test("prints metadata without printing resolved secret values", () => {
-    const homePath = mkdtempSync(join(tmpdir(), "opchain-v2-home-"));
+    const homePath = mkdtempSync(join(tmpdir(), "opchain-home-"));
 
     writeHomeConfig(homePath, {
       identities: {
         human: {
           defaultMode: "default",
-          profiles: { default: "opchain-v2:human:default" },
+          profiles: { default: "opchain:human:default" },
           vaults: ["Human"],
         },
       },
@@ -57,13 +57,13 @@ describe("secrets inspect", () => {
   });
 
   test("fails cleanly when op returns malformed item JSON", () => {
-    const homePath = mkdtempSync(join(tmpdir(), "opchain-v2-home-"));
+    const homePath = mkdtempSync(join(tmpdir(), "opchain-home-"));
 
     writeHomeConfig(homePath, {
       identities: {
         human: {
           defaultMode: "default",
-          profiles: { default: "opchain-v2:human:default" },
+          profiles: { default: "opchain:human:default" },
           vaults: ["Human"],
         },
       },

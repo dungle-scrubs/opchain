@@ -8,8 +8,8 @@ import { writeHumanConfig } from "../helpers/write-opchain-config.ts";
 
 describe("secrets validate --project-wide", () => {
   test("scans projects_dir when explicitly requested", () => {
-    const homePath = mkdtempSync(join(tmpdir(), "opchain-v2-home-"));
-    const projectsDirPath = mkdtempSync(join(tmpdir(), "opchain-v2-projects-"));
+    const homePath = mkdtempSync(join(tmpdir(), "opchain-home-"));
+    const projectsDirPath = mkdtempSync(join(tmpdir(), "opchain-projects-"));
     const helperGetLogPath = join(homePath, "helper-get-project-wide.log");
     const opReadLogPath = join(homePath, "op-project-wide.log");
 

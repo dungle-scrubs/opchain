@@ -34,8 +34,8 @@ run_demo_command() {
 
 trap cleanup EXIT
 
-mkdir -p "$home_dir/.config/opchain-v2" "$project_dir/apps/demo"
-cat > "$home_dir/.config/opchain-v2/config.toml" <<'EOF'
+mkdir -p "$home_dir/.config/opchain" "$project_dir/apps/demo"
+cat > "$home_dir/.config/opchain/config.toml" <<'EOF'
 [defaults]
 projects_dir = "/Users/kevin/dev"
 expires_threshold_days = 14
@@ -47,17 +47,17 @@ default_mode = "default"
 vaults = ["Human", "Services", "Models"]
 
 [identities.human.profiles.default]
-keychain_account = "opchain-v2:human:default"
+keychain_account = "opchain:human:default"
 
 [identities.kevin]
 default_mode = "auto"
 vaults = ["Personal", "Services"]
 
 [identities.kevin.profiles.read]
-keychain_account = "opchain-v2:kevin:read"
+keychain_account = "opchain:kevin:read"
 
 [identities.kevin.profiles.write]
-keychain_account = "opchain-v2:kevin:write"
+keychain_account = "opchain:kevin:write"
 EOF
 cat > "$project_dir/.env.op" <<'EOF'
 OPENAI_API_KEY=op://Services/OpenAI/api-key

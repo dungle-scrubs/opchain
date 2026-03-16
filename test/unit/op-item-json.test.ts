@@ -8,7 +8,7 @@ import { withEnv } from "../helpers/with-env.ts";
 
 describe("readOpItemJson", () => {
   test("loads parsed item JSON and injects the service-account token", async () => {
-    const logDirectoryPath = mkdtempSync(join(tmpdir(), "opchain-v2-op-log-"));
+    const logDirectoryPath = mkdtempSync(join(tmpdir(), "opchain-op-log-"));
     const logPath = join(logDirectoryPath, "op.log");
 
     const result = await withEnv(

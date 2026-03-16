@@ -8,7 +8,7 @@ import { writeAutoReadConfig } from "../helpers/write-opchain-config.ts";
 
 describe("token set TTY prompt", () => {
   test("prompts for a hidden token on a TTY when --stdin is omitted", () => {
-    const homePath = mkdtempSync(join(tmpdir(), "opchain-v2-home-"));
+    const homePath = mkdtempSync(join(tmpdir(), "opchain-home-"));
     const helperWriteLogPath = join(homePath, "helper-write-tty.log");
 
     writeAutoReadConfig(homePath);
@@ -44,8 +44,8 @@ describe("token set TTY prompt", () => {
     expect(result.stdout).not.toContain("token-from-tty");
     expect(readFileSync(helperWriteLogPath, "utf8")).toBe(
       `${[
-        "service=opchain-v2",
-        "account=opchain-v2:kevin:read",
+        "service=opchain",
+        "account=opchain:kevin:read",
         "token=token-from-tty",
       ].join("\n")}
 `,
