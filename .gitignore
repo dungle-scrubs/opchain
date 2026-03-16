@@ -1,3 +1,6 @@
+# compiled binary
+/opchain
+
 node_modules
 coverage
 dist
