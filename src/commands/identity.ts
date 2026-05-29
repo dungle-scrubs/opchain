@@ -1,9 +1,14 @@
 import type { Config } from "../config/load-config.ts";
 
+import type { CommandRequest } from "../cli/command-request.ts";
 import { isExecutableAvailable } from "../cli/io.ts";
 import { loadConfigContext } from "../cli/config-context.ts";
-import type { CliOptions } from "../cli/options.ts";
 import { resolveHelperPath } from "../cli/paths.ts";
+import {
+  commandFailure,
+  commandSuccess,
+  type CommandResult,
+} from "../cli/result.ts";
 
 /**
  * Renders the current doctor report.
@@ -42,17 +47,18 @@ function renderDoctorOutput(config: Config, configPath: string): string {
  * @param options - Parsed CLI options.
  * @returns {Promise<number>} Process exit code.
  */
-export async function runIdentityList(options: CliOptions): Promise<number> {
+export async function runIdentityList(
+  request: CommandRequest,
+): Promise<CommandResult> {
+  const { options } = request;
   const configContext = await loadConfigContext(options);
   if (!configContext.ok) {
-    process.stderr.write(`${configContext.error}\n`);
-    return 1;
+    return commandFailure(`${configContext.error}\n`);
   }
 
-  process.stdout.write(
+  return commandSuccess(
     `${Object.keys(configContext.value.config.identities).join("\n")}\n`,
   );
-  return 0;
 }
 
 /**
@@ -61,15 +67,16 @@ export async function runIdentityList(options: CliOptions): Promise<number> {
  * @param options - Parsed CLI options.
  * @returns {Promise<number>} Process exit code.
  */
-export async function runDoctor(options: CliOptions): Promise<number> {
+export async function runDoctor(
+  request: CommandRequest,
+): Promise<CommandResult> {
+  const { options } = request;
   const configContext = await loadConfigContext(options);
   if (!configContext.ok) {
-    process.stderr.write(`${configContext.error}\n`);
-    return 1;
+    return commandFailure(`${configContext.error}\n`);
   }
 
-  process.stdout.write(
+  return commandSuccess(
     `${renderDoctorOutput(configContext.value.config, configContext.value.configPath)}\n`,
   );
-  return 0;
 }

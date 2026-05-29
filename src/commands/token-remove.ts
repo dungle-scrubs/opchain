@@ -1,12 +1,16 @@
 import { promptForConfirmation } from "../token/prompt-for-token.ts";
 import { removeTokenWithHelper } from "../token/remove-token-with-helper.ts";
 
-import { parseCommandPath } from "../cli/command-args.ts";
+import type { CommandRequest } from "../cli/command-request.ts";
 import { parseFlagArguments } from "../cli/flag-args.ts";
 import { loadConfigContext } from "../cli/config-context.ts";
-import type { CliOptions } from "../cli/options.ts";
 import { resolveHelperPath } from "../cli/paths.ts";
 import { resolveConfiguredAccount } from "../cli/profile.ts";
+import {
+  commandFailure,
+  commandSuccess,
+  type CommandResult,
+} from "../cli/result.ts";
 
 type TokenRemoveOptions = {
   readonly identity: string;
@@ -58,40 +62,37 @@ function parseTokenRemoveOptions(
  * @param options - Parsed CLI options.
  * @returns {Promise<number>} Process exit code.
  */
-export async function runTokenRemove(options: CliOptions): Promise<number> {
-  const parsedArgs = parseCommandPath(options.commandArgs, ["token", "remove"]);
-  if (!parsedArgs.ok) {
-    process.stderr.write(`${parsedArgs.error}\n`);
-    return 1;
+export async function runTokenRemove(
+  request: CommandRequest,
+): Promise<CommandResult> {
+  if (request.kind !== "top") {
+    return commandFailure("Invalid command shape for token remove.\n");
   }
 
-  const tokenRemoveOptions = parseTokenRemoveOptions(parsedArgs.trailingArgs);
+  const { options } = request;
+  const tokenRemoveOptions = parseTokenRemoveOptions(request.trailingArgs);
   if (typeof tokenRemoveOptions === "string") {
-    process.stderr.write(`${tokenRemoveOptions}\n`);
-    return 1;
+    return commandFailure(`${tokenRemoveOptions}\n`);
   }
 
   if (
     !tokenRemoveOptions.yes &&
     (!process.stdin.isTTY || !process.stdout.isTTY)
   ) {
-    process.stderr.write(
+    return commandFailure(
       "token remove requires --yes or an interactive TTY.\n",
     );
-    return 1;
   }
 
   const configContext = await loadConfigContext(options);
   if (!configContext.ok) {
-    process.stderr.write(`${configContext.error}\n`);
-    return 1;
+    return commandFailure(`${configContext.error}\n`);
   }
 
   if (configContext.value.config.defaults.keychainBackend !== "helper") {
-    process.stderr.write(
+    return commandFailure(
       "token remove currently supports helper backend only.\n",
     );
-    return 1;
   }
 
   const resolvedAccount = resolveConfiguredAccount(
@@ -100,8 +101,7 @@ export async function runTokenRemove(options: CliOptions): Promise<number> {
     tokenRemoveOptions.profile,
   );
   if (typeof resolvedAccount === "string") {
-    process.stderr.write(`${resolvedAccount}\n`);
-    return 1;
+    return commandFailure(`${resolvedAccount}\n`);
   }
 
   if (!tokenRemoveOptions.yes) {
@@ -109,8 +109,7 @@ export async function runTokenRemove(options: CliOptions): Promise<number> {
       `Remove token for ${tokenRemoveOptions.identity}.${tokenRemoveOptions.profile}? [y/N] `,
     );
     if (confirmed !== true) {
-      process.stderr.write("Token removal cancelled.\n");
-      return 1;
+      return commandFailure("Token removal cancelled.\n");
     }
   }
 
@@ -120,12 +119,10 @@ export async function runTokenRemove(options: CliOptions): Promise<number> {
     serviceName: "opchain",
   });
   if (!removeResult.ok) {
-    process.stderr.write(`${removeResult.error.message}\n`);
-    return 1;
+    return commandFailure(`${removeResult.error.message}\n`);
   }
 
-  process.stdout.write(
+  return commandSuccess(
     `Removed token for ${tokenRemoveOptions.identity}.${tokenRemoveOptions.profile}.\n`,
   );
-  return 0;
 }

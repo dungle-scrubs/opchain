@@ -1,8 +1,12 @@
 import { resolveReadIdentityContext } from "../cli/token-context.ts";
-import type { CliOptions } from "../cli/options.ts";
+import type { CommandRequest } from "../cli/command-request.ts";
+import {
+  commandFailure,
+  commandSuccess,
+  type CommandResult,
+} from "../cli/result.ts";
 import { readOpItemJson } from "../op/item-json.ts";
 
-import { parseIdentityCommandPath } from "../cli/command-args.ts";
 import {
   formatSecretInspectOutput,
   parseSecretInspectMetadata,
@@ -14,24 +18,20 @@ import {
  * @param options - Parsed CLI options.
  * @returns {Promise<number>} Process exit code.
  */
-export async function runSecretsInspect(options: CliOptions): Promise<number> {
-  const parsedArgs = parseIdentityCommandPath(options.commandArgs, [
-    "secrets",
-    "inspect",
-  ]);
-  if (!parsedArgs.ok) {
-    process.stderr.write(`${parsedArgs.error}\n`);
-    return 1;
+export async function runSecretsInspect(
+  request: CommandRequest,
+): Promise<CommandResult> {
+  if (request.kind !== "identity") {
+    return commandFailure("Invalid command shape for secrets inspect.\n");
   }
 
-  const { identityName } = parsedArgs;
-  const [reference] = parsedArgs.trailingArgs;
+  const { identityName, options } = request;
+  const [reference] = request.trailingArgs;
 
   if (reference === undefined) {
-    process.stderr.write(
+    return commandFailure(
       "secrets inspect currently requires an explicit reference.\n",
     );
-    return 1;
   }
 
   const identityContext = await resolveReadIdentityContext(
@@ -39,8 +39,7 @@ export async function runSecretsInspect(options: CliOptions): Promise<number> {
     identityName,
   );
   if (!identityContext.ok) {
-    process.stderr.write(`${identityContext.error}\n`);
-    return 1;
+    return commandFailure(`${identityContext.error}\n`);
   }
 
   const itemResult = readOpItemJson(
@@ -50,16 +49,13 @@ export async function runSecretsInspect(options: CliOptions): Promise<number> {
     "Invalid secret inspection payload.",
   );
   if (!itemResult.ok) {
-    process.stderr.write(`${itemResult.error}\n`);
-    return 1;
+    return commandFailure(`${itemResult.error}\n`);
   }
 
   const metadata = parseSecretInspectMetadata(itemResult.value);
   if (typeof metadata === "string") {
-    process.stderr.write(`${metadata}\n`);
-    return 1;
+    return commandFailure(`${metadata}\n`);
   }
 
-  process.stdout.write(`${formatSecretInspectOutput(metadata)}\n`);
-  return 0;
+  return commandSuccess(`${formatSecretInspectOutput(metadata)}\n`);
 }

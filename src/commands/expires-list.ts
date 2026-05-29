@@ -1,7 +1,11 @@
-import { parseIdentityCommandPath } from "../cli/command-args.ts";
-import { loadExpiryStateResult } from "../cli/io.ts";
-import type { CliOptions } from "../cli/options.ts";
-import { resolveExpiryStatePath } from "../cli/paths.ts";
+import type { CommandRequest } from "../cli/command-request.ts";
+import { loadConfigContext } from "../cli/config-context.ts";
+import {
+  commandFailure,
+  commandSuccess,
+  type CommandResult,
+} from "../cli/result.ts";
+import { createExpiryTracker } from "../expires/tracker.ts";
 
 /**
  * Handles `opchain <identity> expires list`.
@@ -9,35 +13,33 @@ import { resolveExpiryStatePath } from "../cli/paths.ts";
  * @param options - Parsed CLI options.
  * @returns {Promise<number>} Process exit code.
  */
-export async function runExpiresList(options: CliOptions): Promise<number> {
-  const parsedArgs = parseIdentityCommandPath(options.commandArgs, [
-    "expires",
-    "list",
-  ]);
-  if (!parsedArgs.ok) {
-    process.stderr.write(`${parsedArgs.error}\n`);
-    return 1;
+export async function runExpiresList(
+  request: CommandRequest,
+): Promise<CommandResult> {
+  if (request.kind !== "identity") {
+    return commandFailure("Invalid command shape for expires list.\n");
   }
 
-  const { identityName } = parsedArgs;
-  const stateResult = loadExpiryStateResult(
-    resolveExpiryStatePath(identityName),
-    identityName,
-  );
-  if (!stateResult.ok) {
-    process.stderr.write(`${stateResult.error}\n`);
-    return 1;
+  const { identityName, options } = request;
+  const configContext = await loadConfigContext(options);
+  if (!configContext.ok) {
+    return commandFailure(`${configContext.error}\n`);
   }
 
-  const lines = stateResult.value.trackedItems.map(
-    (item) =>
-      `${item.vaultUuid}/${item.itemUuid} ${item.vaultTitle} / ${item.itemTitle}`,
-  );
+  if (configContext.value.config.identities[identityName] === undefined) {
+    return commandFailure(`Unknown identity: ${identityName}.\n`);
+  }
+
+  const listResult = createExpiryTracker(identityName).list();
+  if (!listResult.ok) {
+    return commandFailure(`${listResult.error}\n`);
+  }
+
+  const { lines } = listResult.value;
 
   if (lines.length === 0) {
-    return 0;
+    return commandSuccess();
   }
 
-  process.stdout.write(`${lines.join("\n")}\n`);
-  return 0;
+  return commandSuccess(`${lines.join("\n")}\n`);
 }

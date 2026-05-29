@@ -1,14 +1,86 @@
-import { spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 
 import { createTelemetryEvent } from "../telemetry/event.ts";
 
-import { parseIdentityCommandPath } from "../cli/command-args.ts";
+import { buildTokenChildEnv } from "../cli/child-env.ts";
+import type { CommandRequest } from "../cli/command-request.ts";
 import { loadConfigContext } from "../cli/config-context.ts";
-import type { CliOptions } from "../cli/options.ts";
 import { resolveOpPath } from "../cli/paths.ts";
 import { classifyOpCommand, resolveOpProfile } from "../cli/profile.ts";
+import {
+  commandFailure,
+  commandSuccess,
+  type CommandResult,
+} from "../cli/result.ts";
 import { writeTelemetry } from "../cli/telemetry.ts";
 import { resolveTokenForAccount } from "../cli/token-context.ts";
+
+type OpChildResult =
+  | {
+      readonly error: Error;
+      readonly ok: false;
+    }
+  | {
+      readonly exitCode: number;
+      readonly ok: true;
+      readonly stderrBytes: number;
+      readonly stdoutBytes: number;
+    };
+
+/**
+ * Runs `op` while streaming output through and retaining only byte counts.
+ *
+ * @param opArgs - Arguments passed after the `op` token.
+ * @param token - Service-account token injected into the child process.
+ * @returns {Promise<OpChildResult>} Child exit data or spawn error.
+ */
+function runOpChild(
+  opArgs: readonly string[],
+  token: string,
+): Promise<OpChildResult> {
+  return new Promise((resolve) => {
+    const child = spawn(resolveOpPath(), opArgs, {
+      env: buildTokenChildEnv(token),
+      stdio: ["inherit", "pipe", "pipe"],
+    });
+    let stderrBytes = 0;
+    let stdoutBytes = 0;
+    let settled = false;
+
+    child.stdout.on("data", (chunk: Buffer) => {
+      stdoutBytes += chunk.length;
+      process.stdout.write(chunk);
+    });
+
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderrBytes += chunk.length;
+      process.stderr.write(chunk);
+    });
+
+    child.on("error", (error) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      resolve({ error, ok: false });
+    });
+
+    child.on("close", (code) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      resolve({
+        exitCode: code ?? 1,
+        ok: true,
+        stderrBytes,
+        stdoutBytes,
+      });
+    });
+  });
+}
 
 /**
  * Handles `opchain <identity> op ...` for the current read-safe slice.
@@ -16,15 +88,15 @@ import { resolveTokenForAccount } from "../cli/token-context.ts";
  * @param options - Parsed CLI options.
  * @returns {Promise<number>} Process exit code.
  */
-export async function runIdentityOp(options: CliOptions): Promise<number> {
-  const parsedArgs = parseIdentityCommandPath(options.commandArgs, ["op"]);
-  if (!parsedArgs.ok) {
-    process.stderr.write(`${parsedArgs.error}\n`);
-    return 1;
+export async function runIdentityOp(
+  request: CommandRequest,
+): Promise<CommandResult> {
+  if (request.kind !== "identity") {
+    return commandFailure("Invalid command shape for op.\n");
   }
 
-  const { identityName } = parsedArgs;
-  const opArgs = parsedArgs.trailingArgs;
+  const { identityName, options } = request;
+  const opArgs = request.trailingArgs;
   const classification = classifyOpCommand(opArgs);
 
   if (
@@ -32,16 +104,14 @@ export async function runIdentityOp(options: CliOptions): Promise<number> {
     options.accessOverride === undefined &&
     options.explicitProfile === undefined
   ) {
-    process.stderr.write(
+    return commandFailure(
       "Unsupported op command shape. Explicit profile selection is required.\n",
     );
-    return 1;
   }
 
   const configContext = await loadConfigContext(options);
   if (!configContext.ok) {
-    process.stderr.write(`${configContext.error}\n`);
-    return 1;
+    return commandFailure(`${configContext.error}\n`);
   }
 
   writeTelemetry(
@@ -61,8 +131,7 @@ export async function runIdentityOp(options: CliOptions): Promise<number> {
     options.explicitProfile,
   );
   if (typeof resolvedProfile === "string") {
-    process.stderr.write(`${resolvedProfile}\n`);
-    return 1;
+    return commandFailure(`${resolvedProfile}\n`);
   }
 
   const tokenResult = await resolveTokenForAccount(
@@ -71,8 +140,7 @@ export async function runIdentityOp(options: CliOptions): Promise<number> {
     options.allowEnvToken,
   );
   if (!tokenResult.ok) {
-    process.stderr.write(`${tokenResult.error}\n`);
-    return 1;
+    return commandFailure(`${tokenResult.error}\n`);
   }
 
   writeTelemetry(
@@ -84,38 +152,26 @@ export async function runIdentityOp(options: CliOptions): Promise<number> {
     }),
   );
 
-  const opResult = spawnSync(resolveOpPath(), opArgs, {
-    encoding: "utf8",
-    env: {
-      ...process.env,
-      OP_SERVICE_ACCOUNT_TOKEN: tokenResult.value,
-    },
-  });
+  const opResult = await runOpChild(opArgs, tokenResult.value);
 
-  if (opResult.stdout.length > 0) {
-    process.stdout.write(opResult.stdout);
-  }
-
-  if (opResult.stderr.length > 0) {
-    process.stderr.write(opResult.stderr);
-  }
-
-  if (opResult.error) {
-    process.stderr.write(`${opResult.error.message}\n`);
-    return 1;
+  if (!opResult.ok) {
+    return commandFailure(`${opResult.error.message}\n`);
   }
 
   writeTelemetry(
     options,
     createTelemetryEvent("op.exec.finish", {
       command_name: opArgs.slice(0, 2).join(" "),
-      exit_code: opResult.status ?? 1,
+      exit_code: opResult.exitCode,
       identity: identityName,
       profile: resolvedProfile.profileName,
-      stderr_bytes: opResult.stderr.length,
-      stdout_bytes: opResult.stdout.length,
+      stderr_bytes: opResult.stderrBytes,
+      stdout_bytes: opResult.stdoutBytes,
     }),
   );
 
-  return opResult.status ?? 1;
+  return {
+    ...commandSuccess(),
+    exitCode: opResult.exitCode,
+  };
 }

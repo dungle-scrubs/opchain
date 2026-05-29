@@ -1,4 +1,5 @@
 import type { CliOptions } from "./options.ts";
+import type { CommandRequest } from "./command-request.ts";
 import {
   CLI_COMMAND_DEFINITIONS,
   type CliCommandDefinition,
@@ -10,6 +11,11 @@ type CommandRoute = {
   readonly handler: CommandHandler;
   readonly offset: number;
   readonly subject: readonly [string, ...string[]];
+};
+
+type CommandDispatch = {
+  readonly handler: CommandHandler;
+  readonly request: CommandRequest;
 };
 
 /**
@@ -79,10 +85,44 @@ function matchesRoute(
  * @param options - Parsed CLI options.
  * @returns {CommandHandler | null} Matching command handler or null when unsupported.
  */
-export function findCommandHandler(options: CliOptions): CommandHandler | null {
+export function findCommandDispatch(
+  options: CliOptions,
+): CommandDispatch | null {
   const route = COMMAND_ROUTES.find((candidate) =>
     matchesRoute(options.commandArgs, candidate),
   );
 
-  return route?.handler ?? null;
+  if (route === undefined) {
+    return null;
+  }
+
+  const trailingArgs = options.commandArgs.slice(
+    route.offset + route.subject.length,
+  );
+
+  if (route.offset === 1) {
+    const identityName = options.commandArgs[0];
+    if (identityName === undefined) {
+      return null;
+    }
+
+    return {
+      handler: route.handler,
+      request: {
+        identityName,
+        kind: "identity",
+        options,
+        trailingArgs,
+      },
+    };
+  }
+
+  return {
+    handler: route.handler,
+    request: {
+      kind: "top",
+      options,
+      trailingArgs,
+    },
+  };
 }

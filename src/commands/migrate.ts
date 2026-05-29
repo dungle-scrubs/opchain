@@ -1,8 +1,12 @@
 import { createTelemetryEvent } from "../telemetry/event.ts";
 
-import { parseCommandPath } from "../cli/command-args.ts";
+import type { CommandRequest } from "../cli/command-request.ts";
 import { parseFlagArguments } from "../cli/flag-args.ts";
-import type { CliOptions } from "../cli/options.ts";
+import {
+  commandFailure,
+  commandSuccess,
+  type CommandResult,
+} from "../cli/result.ts";
 import { writeTelemetry } from "../cli/telemetry.ts";
 import { applyMigrationPlan } from "../migrate/apply.ts";
 import { buildMigrationPlan } from "../migrate/plan.ts";
@@ -46,23 +50,22 @@ function parseMigrateOptions(
  * @param options - Parsed CLI options.
  * @returns {Promise<number>} Process exit code.
  */
-export async function runMigrateV1(options: CliOptions): Promise<number> {
-  const parsedPath = parseCommandPath(options.commandArgs, ["migrate-v1"]);
-  if (!parsedPath.ok) {
-    process.stderr.write(`${parsedPath.error}\n`);
-    return 1;
+export async function runMigrateV1(
+  request: CommandRequest,
+): Promise<CommandResult> {
+  if (request.kind !== "top") {
+    return commandFailure("Invalid command shape for migrate-v1.\n");
   }
 
-  const migrateOptions = parseMigrateOptions(parsedPath.trailingArgs);
+  const { options } = request;
+  const migrateOptions = parseMigrateOptions(request.trailingArgs);
   if (typeof migrateOptions === "string") {
-    process.stderr.write(`${migrateOptions}\n`);
-    return 1;
+    return commandFailure(`${migrateOptions}\n`);
   }
 
   const planResult = await buildMigrationPlan(options);
   if (!planResult.ok) {
-    process.stderr.write(`${planResult.error}\n`);
-    return 1;
+    return commandFailure(`${planResult.error}\n`);
   }
 
   writeTelemetry(
@@ -75,22 +78,21 @@ export async function runMigrateV1(options: CliOptions): Promise<number> {
   );
 
   if (migrateOptions.dryRun) {
-    process.stdout.write(`${planResult.value.outputLines.join("\n")}\n`);
-    return 0;
+    return commandSuccess(`${planResult.value.outputLines.join("\n")}\n`);
   }
 
   if (!planResult.value.canApply) {
-    process.stderr.write(
-      "migrate-v1 apply requires resolving all legacy expiry records before writing v2 files.\n",
+    return commandFailure(
+      `${[
+        "migrate-v1 apply requires resolving all legacy expiry records before writing v2 files.",
+        ...planResult.value.outputLines,
+      ].join("\n")}\n`,
     );
-    process.stderr.write(`${planResult.value.outputLines.join("\n")}\n`);
-    return 1;
   }
 
   const applyResult = applyMigrationPlan(planResult.value);
   if (!applyResult.ok) {
-    process.stderr.write(`${applyResult.error}\n`);
-    return 1;
+    return commandFailure(`${applyResult.error}\n`);
   }
 
   writeTelemetry(
@@ -103,11 +105,10 @@ export async function runMigrateV1(options: CliOptions): Promise<number> {
     }),
   );
 
-  process.stdout.write(
+  return commandSuccess(
     `${[
       `Applied migration config: ${applyResult.value.v2ConfigPath}`,
       `Applied migration expires: ${applyResult.value.v2ExpiresPath}`,
     ].join("\n")}\n`,
   );
-  return 0;
 }

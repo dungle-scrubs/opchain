@@ -22,7 +22,7 @@ function createRuntimeDeps(overrides: Partial<CliRuntimeDeps> = {}): Readonly<{
   return {
     deps: {
       buildProgram: () => ({ helpInformation: () => "HELP\n" }),
-      findCommandHandler: () => null,
+      findCommandDispatch: () => null,
       parseCliOptions: () => createCliOptions(),
       resolveCommandName: () => "unknown",
       writeStderr: (text) => {
@@ -79,10 +79,21 @@ describe("runCli", () => {
     });
     const handledOptions: (typeof options)[] = [];
     const runtime = createRuntimeDeps({
-      findCommandHandler: () => async (receivedOptions) => {
-        handledOptions.push(receivedOptions);
-        return 17;
-      },
+      findCommandDispatch: (receivedOptions) => ({
+        handler: async (request) => {
+          handledOptions.push(request.options);
+          return {
+            exitCode: 17,
+            stderr: "",
+            stdout: "handled\n",
+          };
+        },
+        request: {
+          kind: "top",
+          options: receivedOptions,
+          trailingArgs: [],
+        },
+      }),
       parseCliOptions: () => options,
       resolveCommandName: () => "doctor",
     });
@@ -91,7 +102,7 @@ describe("runCli", () => {
 
     expect(exitCode).toBe(17);
     expect(handledOptions).toEqual([options]);
-    expect(runtime.stdout).toEqual([]);
+    expect(runtime.stdout).toEqual(["handled\n"]);
     expect(runtime.stderr).toEqual([]);
     expect(runtime.telemetry).toHaveLength(1);
     expect(runtime.telemetry[0]?.name).toBe("cli.start");

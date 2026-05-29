@@ -1,9 +1,12 @@
-import { listSecretReferences } from "../secrets/parse-env-op.ts";
+import { collectSecretReferencesFromFiles } from "../secrets/workflow.ts";
 
-import { parseIdentityCommandPath } from "../cli/command-args.ts";
-import { readTextFile } from "../cli/io.ts";
+import type { CommandRequest } from "../cli/command-request.ts";
 import { loadConfigContext } from "../cli/config-context.ts";
-import type { CliOptions } from "../cli/options.ts";
+import {
+  commandFailure,
+  commandSuccess,
+  type CommandResult,
+} from "../cli/result.ts";
 
 /**
  * Handles `opchain <identity> secrets list [path]`.
@@ -11,47 +14,37 @@ import type { CliOptions } from "../cli/options.ts";
  * @param options - Parsed CLI options.
  * @returns {Promise<number>} Process exit code.
  */
-export async function runSecretsList(options: CliOptions): Promise<number> {
-  const parsedArgs = parseIdentityCommandPath(options.commandArgs, [
-    "secrets",
-    "list",
-  ]);
-  if (!parsedArgs.ok) {
-    process.stderr.write(`${parsedArgs.error}\n`);
-    return 1;
+export async function runSecretsList(
+  request: CommandRequest,
+): Promise<CommandResult> {
+  if (request.kind !== "identity") {
+    return commandFailure("Invalid command shape for secrets list.\n");
   }
 
-  const { identityName } = parsedArgs;
-  const [targetPath] = parsedArgs.trailingArgs;
+  const { identityName, options } = request;
+  const [targetPath] = request.trailingArgs;
 
   if (targetPath === undefined) {
-    process.stderr.write(
+    return commandFailure(
       "secrets list currently requires an explicit file path.\n",
     );
-    return 1;
   }
 
   const configContext = await loadConfigContext(options);
   if (!configContext.ok) {
-    process.stderr.write(`${configContext.error}\n`);
-    return 1;
+    return commandFailure(`${configContext.error}\n`);
   }
 
   if (configContext.value.config.identities[identityName] === undefined) {
-    process.stderr.write(`Unknown identity: ${identityName}.\n`);
-    return 1;
+    return commandFailure(`Unknown identity: ${identityName}.\n`);
   }
 
-  const envOpFileResult = readTextFile(
+  const referencesResult = collectSecretReferencesFromFiles(options, [
     targetPath,
-    "Failed to read .env.op file",
-  );
-  if (!envOpFileResult.ok) {
-    process.stderr.write(`${envOpFileResult.error}\n`);
-    return 1;
+  ]);
+  if (!referencesResult.ok) {
+    return commandFailure(`${referencesResult.error}\n`);
   }
 
-  const references = listSecretReferences(envOpFileResult.value);
-  process.stdout.write(`${references.join("\n")}\n`);
-  return 0;
+  return commandSuccess(`${referencesResult.value.join("\n")}\n`);
 }

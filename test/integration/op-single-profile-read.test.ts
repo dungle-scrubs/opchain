@@ -29,6 +29,8 @@ describe("single-profile op execution", () => {
           OPCHAIN_OP_PATH: join(process.cwd(), "test/fixtures/bin/op"),
           OPCHAIN_TEST_HELPER_TOKEN: "token-for-human-default",
           OPCHAIN_TEST_OP_LOG: opLogPath,
+          OPCHAIN_TEST_OP_LOG_ENV: "1",
+          OPCHAIN_TOKEN_OVERRIDE: "ambient-token-should-not-leak",
         },
       },
     );
@@ -38,7 +40,9 @@ describe("single-profile op execution", () => {
     expect(result.stdout).not.toContain("token-for-human-default");
     expect(result.stderr).toBe("");
     expect(readFileSync(opLogPath, "utf8")).toBe(
-      `${["args=vault list", "token=token-for-human-default"].join("\n")}
+      `${["args=vault list", "token=token-for-human-default", "override="].join(
+        "\n",
+      )}
 `,
     );
   });

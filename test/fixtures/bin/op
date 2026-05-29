@@ -5,6 +5,9 @@ if [[ -n "${OPCHAIN_TEST_OP_LOG:-}" ]]; then
   {
     printf 'args=%s\n' "$*"
     printf 'token=%s\n' "${OP_SERVICE_ACCOUNT_TOKEN:-}"
+    if [[ -n "${OPCHAIN_TEST_OP_LOG_ENV:-}" ]]; then
+      printf 'override=%s\n' "${OPCHAIN_TOKEN_OVERRIDE:-}"
+    fi
   } > "$OPCHAIN_TEST_OP_LOG"
 fi
 

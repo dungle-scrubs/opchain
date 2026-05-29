@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 
+import { writeHumanConfig } from "../helpers/write-opchain-config.ts";
+
 describe("expires list invalid state", () => {
   test("fails cleanly when the expiry state file is malformed", () => {
     const homePath = mkdtempSync(join(tmpdir(), "opchain-home-"));
@@ -17,6 +19,7 @@ describe("expires list invalid state", () => {
     const statePath = join(stateDirectoryPath, "human.json");
 
     mkdirSync(stateDirectoryPath, { recursive: true });
+    writeHumanConfig(homePath);
     writeFileSync(statePath, "{\n", "utf8");
 
     const result = spawnSync(

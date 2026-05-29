@@ -1,4 +1,5 @@
-import type { CliOptions } from "./options.ts";
+import type { CommandRequest } from "./command-request.ts";
+import type { CommandResult } from "./result.ts";
 import { runExpiresAdd } from "../commands/expires-add.ts";
 import { runExpiresList } from "../commands/expires-list.ts";
 import { runExpiresRemove } from "../commands/expires-remove.ts";
@@ -13,7 +14,9 @@ import { runSecretsValidate } from "../commands/secrets-validate.ts";
 import { runTokenRemove } from "../commands/token-remove.ts";
 import { runTokenSet } from "../commands/token-set.ts";
 
-export type CommandHandler = (options: CliOptions) => Promise<number>;
+export type CommandHandler = (
+  request: CommandRequest,
+) => Promise<CommandResult>;
 
 type CliSubcommandDefinition = {
   readonly description: string;

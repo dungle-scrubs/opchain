@@ -1,13 +1,17 @@
 import { promptForToken } from "../token/prompt-for-token.ts";
 import { setTokenWithHelper } from "../token/set-token-with-helper.ts";
 
-import { parseCommandPath } from "../cli/command-args.ts";
+import type { CommandRequest } from "../cli/command-request.ts";
 import { parseFlagArguments } from "../cli/flag-args.ts";
 import { readTokenFromStdin } from "../cli/io.ts";
 import { loadConfigContext } from "../cli/config-context.ts";
-import type { CliOptions } from "../cli/options.ts";
 import { resolveHelperPath } from "../cli/paths.ts";
 import { resolveConfiguredAccount } from "../cli/profile.ts";
+import {
+  commandFailure,
+  commandSuccess,
+  type CommandResult,
+} from "../cli/result.ts";
 
 type TokenSetOptions = {
   readonly identity: string;
@@ -59,28 +63,28 @@ function parseTokenSetOptions(
  * @param options - Parsed CLI options.
  * @returns {Promise<number>} Process exit code.
  */
-export async function runTokenSet(options: CliOptions): Promise<number> {
-  const parsedArgs = parseCommandPath(options.commandArgs, ["token", "set"]);
-  if (!parsedArgs.ok) {
-    process.stderr.write(`${parsedArgs.error}\n`);
-    return 1;
+export async function runTokenSet(
+  request: CommandRequest,
+): Promise<CommandResult> {
+  if (request.kind !== "top") {
+    return commandFailure("Invalid command shape for token set.\n");
   }
 
-  const tokenSetOptions = parseTokenSetOptions(parsedArgs.trailingArgs);
+  const { options } = request;
+  const tokenSetOptions = parseTokenSetOptions(request.trailingArgs);
   if (typeof tokenSetOptions === "string") {
-    process.stderr.write(`${tokenSetOptions}\n`);
-    return 1;
+    return commandFailure(`${tokenSetOptions}\n`);
   }
 
   const configContext = await loadConfigContext(options);
   if (!configContext.ok) {
-    process.stderr.write(`${configContext.error}\n`);
-    return 1;
+    return commandFailure(`${configContext.error}\n`);
   }
 
   if (configContext.value.config.defaults.keychainBackend !== "helper") {
-    process.stderr.write("token set currently supports helper backend only.\n");
-    return 1;
+    return commandFailure(
+      "token set currently supports helper backend only.\n",
+    );
   }
 
   const resolvedAccount = resolveConfiguredAccount(
@@ -89,8 +93,7 @@ export async function runTokenSet(options: CliOptions): Promise<number> {
     tokenSetOptions.profile,
   );
   if (typeof resolvedAccount === "string") {
-    process.stderr.write(`${resolvedAccount}\n`);
-    return 1;
+    return commandFailure(`${resolvedAccount}\n`);
   }
 
   const token = tokenSetOptions.stdin
@@ -99,12 +102,11 @@ export async function runTokenSet(options: CliOptions): Promise<number> {
         `Enter token for ${tokenSetOptions.identity}.${tokenSetOptions.profile}: `,
       );
   if (token === null) {
-    process.stderr.write(
+    return commandFailure(
       tokenSetOptions.stdin
         ? "token set requires exactly one token value on stdin.\n"
         : "token set requires --stdin or an interactive TTY.\n",
     );
-    return 1;
   }
 
   const setResult = await setTokenWithHelper({
@@ -114,12 +116,10 @@ export async function runTokenSet(options: CliOptions): Promise<number> {
     token,
   });
   if (!setResult.ok) {
-    process.stderr.write(`${setResult.error.message}\n`);
-    return 1;
+    return commandFailure(`${setResult.error.message}\n`);
   }
 
-  process.stdout.write(
+  return commandSuccess(
     `Stored token for ${tokenSetOptions.identity}.${tokenSetOptions.profile}.\n`,
   );
-  return 0;
 }

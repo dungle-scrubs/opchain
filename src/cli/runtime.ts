@@ -5,8 +5,10 @@ import {
 
 import { parseCliOptions, type CliOptions } from "./options.ts";
 import { buildProgram } from "./program.ts";
-import { findCommandHandler } from "./routes.ts";
+import { findCommandDispatch } from "./routes.ts";
 import { resolveCommandName, writeTelemetry } from "./telemetry.ts";
+import type { CommandRequest } from "./command-request.ts";
+import type { CommandHandler } from "./manifest.ts";
 
 export type HelpProgram = {
   readonly helpInformation: () => string;
@@ -14,9 +16,10 @@ export type HelpProgram = {
 
 export type CliRuntimeDeps = {
   readonly buildProgram: () => HelpProgram;
-  readonly findCommandHandler: (
-    options: CliOptions,
-  ) => ((options: CliOptions) => Promise<number>) | null;
+  readonly findCommandDispatch: (options: CliOptions) => {
+    readonly handler: CommandHandler;
+    readonly request: CommandRequest;
+  } | null;
   readonly parseCliOptions: (argv: readonly string[]) => CliOptions;
   readonly resolveCommandName: (options: CliOptions) => string;
   readonly writeStderr: (text: string) => void;
@@ -26,7 +29,7 @@ export type CliRuntimeDeps = {
 
 const DEFAULT_RUNTIME_DEPS: CliRuntimeDeps = {
   buildProgram,
-  findCommandHandler,
+  findCommandDispatch,
   parseCliOptions,
   resolveCommandName,
   writeStderr: (text) => {
@@ -65,11 +68,24 @@ export async function runCli(
     return 0;
   }
 
-  const handler = deps.findCommandHandler(options);
-  if (handler === null) {
+  if (options.parseError !== undefined) {
+    deps.writeStderr(`${options.parseError}\n`);
+    return 1;
+  }
+
+  const dispatch = deps.findCommandDispatch(options);
+  if (dispatch === null) {
     deps.writeStderr(program.helpInformation());
     return 1;
   }
 
-  return handler(options);
+  const result = await dispatch.handler(dispatch.request);
+  if (result.stdout.length > 0) {
+    deps.writeStdout(result.stdout);
+  }
+  if (result.stderr.length > 0) {
+    deps.writeStderr(result.stderr);
+  }
+
+  return result.exitCode;
 }

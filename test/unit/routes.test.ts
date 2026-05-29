@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { findCommandHandler } from "../../src/cli/routes.ts";
+import { findCommandDispatch } from "../../src/cli/routes.ts";
 import type { CliOptions } from "../../src/cli/options.ts";
 import { runExpiresScan } from "../../src/commands/expires-scan.ts";
 import { runIdentityList } from "../../src/commands/identity.ts";
@@ -27,52 +27,65 @@ function createCliOptions(commandArgs: readonly string[]): CliOptions {
   };
 }
 
-describe("findCommandHandler", () => {
+describe("findCommandDispatch", () => {
   test("matches identity-scoped op commands by offset", () => {
-    const handler = findCommandHandler(
+    const dispatch = findCommandDispatch(
       createCliOptions(["human", "op", "vault", "list"]),
     );
 
-    expect(handler).toBe(runIdentityOp);
+    expect(dispatch?.handler).toBe(runIdentityOp);
+    expect(dispatch?.request).toMatchObject({
+      identityName: "human",
+      kind: "identity",
+      trailingArgs: ["vault", "list"],
+    });
   });
 
   test("matches exact-length identity list commands only", () => {
-    const handler = findCommandHandler(createCliOptions(["identity", "list"]));
-    const extraArgHandler = findCommandHandler(
+    const dispatch = findCommandDispatch(
+      createCliOptions(["identity", "list"]),
+    );
+    const extraArgDispatch = findCommandDispatch(
       createCliOptions(["identity", "list", "extra"]),
     );
 
-    expect(handler).toBe(runIdentityList);
-    expect(extraArgHandler).toBeNull();
+    expect(dispatch?.handler).toBe(runIdentityList);
+    expect(extraArgDispatch).toBeNull();
   });
 
   test("matches nested secrets and expires handlers", () => {
-    const secretsHandler = findCommandHandler(
+    const secretsDispatch = findCommandDispatch(
       createCliOptions(["human", "secrets", "validate"]),
     );
-    const expiresHandler = findCommandHandler(
+    const expiresDispatch = findCommandDispatch(
       createCliOptions(["human", "expires", "scan"]),
     );
 
-    expect(secretsHandler).toBe(runSecretsValidate);
-    expect(expiresHandler).toBe(runExpiresScan);
+    expect(secretsDispatch?.handler).toBe(runSecretsValidate);
+    expect(expiresDispatch?.handler).toBe(runExpiresScan);
   });
 
   test("matches top-level token and migration handlers", () => {
-    const tokenHandler = findCommandHandler(createCliOptions(["token", "set"]));
-    const migrationHandler = findCommandHandler(
+    const tokenDispatch = findCommandDispatch(
+      createCliOptions(["token", "set"]),
+    );
+    const migrationDispatch = findCommandDispatch(
       createCliOptions(["migrate-v1", "--dry-run"]),
     );
 
-    expect(tokenHandler).toBe(runTokenSet);
-    expect(migrationHandler).toBe(runMigrateV1);
+    expect(tokenDispatch?.handler).toBe(runTokenSet);
+    expect(migrationDispatch?.handler).toBe(runMigrateV1);
+    expect(migrationDispatch?.request).toMatchObject({
+      kind: "top",
+      trailingArgs: ["--dry-run"],
+    });
   });
 
   test("returns null for unsupported commands", () => {
-    const handler = findCommandHandler(
+    const dispatch = findCommandDispatch(
       createCliOptions(["unknown", "command"]),
     );
 
-    expect(handler).toBeNull();
+    expect(dispatch).toBeNull();
   });
 });

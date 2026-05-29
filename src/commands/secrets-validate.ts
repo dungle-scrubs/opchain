@@ -1,16 +1,12 @@
-import { scanEnvOpTargets } from "../secrets/find-env-op-files.ts";
-import { listSecretReferences } from "../secrets/parse-env-op.ts";
 import {
-  hashSecretReference,
-  validateSecretReferences,
-} from "../secrets/reference-validation.ts";
-import { createTelemetryEvent } from "../telemetry/event.ts";
+  collectSecretReferencesFromFiles,
+  scanSecretReferenceTargets,
+  validateSecretReferenceWorkflow,
+} from "../secrets/workflow.ts";
 
-import { parseIdentityCommandPath } from "../cli/command-args.ts";
+import type { CommandRequest } from "../cli/command-request.ts";
 import { parseFlagArguments } from "../cli/flag-args.ts";
-import { formatRuntimeError, readTextFile } from "../cli/io.ts";
-import type { CliOptions } from "../cli/options.ts";
-import { writeTelemetry } from "../cli/telemetry.ts";
+import { commandFailure, type CommandResult } from "../cli/result.ts";
 import { resolveReadIdentityContext } from "../cli/token-context.ts";
 
 type SecretsValidateOptions = {
@@ -62,22 +58,18 @@ function parseSecretsValidateOptions(
  * @param options - Parsed CLI options.
  * @returns {Promise<number>} Process exit code.
  */
-export async function runSecretsValidate(options: CliOptions): Promise<number> {
-  const parsedArgs = parseIdentityCommandPath(options.commandArgs, [
-    "secrets",
-    "validate",
-  ]);
-  if (!parsedArgs.ok) {
-    process.stderr.write(`${parsedArgs.error}\n`);
-    return 1;
+export async function runSecretsValidate(
+  request: CommandRequest,
+): Promise<CommandResult> {
+  if (request.kind !== "identity") {
+    return commandFailure("Invalid command shape for secrets validate.\n");
   }
 
-  const { identityName } = parsedArgs;
-  const validateOptions = parseSecretsValidateOptions(parsedArgs.trailingArgs);
+  const { identityName, options } = request;
+  const validateOptions = parseSecretsValidateOptions(request.trailingArgs);
 
   if (typeof validateOptions === "string") {
-    process.stderr.write(`${validateOptions}\n`);
-    return 1;
+    return commandFailure(`${validateOptions}\n`);
   }
 
   const identityContext = await resolveReadIdentityContext(
@@ -85,71 +77,55 @@ export async function runSecretsValidate(options: CliOptions): Promise<number> {
     identityName,
   );
   if (!identityContext.ok) {
-    process.stderr.write(`${identityContext.error}\n`);
-    return 1;
+    return commandFailure(`${identityContext.error}\n`);
   }
 
   const scanRoot = validateOptions.projectWide
     ? identityContext.value.config.defaults.projectsDir
     : process.cwd();
 
-  let scanResult: ReturnType<typeof scanEnvOpTargets>;
-  try {
-    scanResult = scanEnvOpTargets(validateOptions.targetPath, scanRoot);
-  } catch (error) {
-    process.stderr.write(
-      `${formatRuntimeError("Failed to scan .env.op targets", error)}\n`,
-    );
-    return 1;
+  const scanResult = scanSecretReferenceTargets(
+    validateOptions.targetPath,
+    scanRoot,
+  );
+  if (!scanResult.ok) {
+    return commandFailure(`${scanResult.error}\n`);
   }
 
-  const uniqueReferences = new Set<string>();
-
+  let stderr = "";
   for (const warning of scanResult.warnings) {
-    process.stderr.write(`${warning}\n`);
+    stderr += `${warning}\n`;
   }
 
-  for (const envOpFilePath of scanResult.files) {
-    const envOpFileResult = readTextFile(
-      envOpFilePath,
-      "Failed to read .env.op file",
-    );
-    if (!envOpFileResult.ok) {
-      process.stderr.write(`${envOpFileResult.error}\n`);
-      return 1;
-    }
-
-    const references = listSecretReferences(envOpFileResult.value);
-    writeTelemetry(
-      options,
-      createTelemetryEvent("envop.scan.file", {
-        file_path: envOpFilePath,
-        reference_count: references.length,
-      }),
-    );
-
-    for (const reference of references) {
-      uniqueReferences.add(reference);
-    }
+  const referencesResult = collectSecretReferencesFromFiles(
+    options,
+    scanResult.files,
+  );
+  if (!referencesResult.ok) {
+    return commandFailure(`${stderr}${referencesResult.error}\n`);
   }
 
-  const validationResult = validateSecretReferences(
+  const validationResult = validateSecretReferenceWorkflow(
+    options,
     identityContext.value.token,
-    [...uniqueReferences],
-    (reference, outcome) => {
-      writeTelemetry(
-        options,
-        createTelemetryEvent("envop.validate.ref", {
-          outcome,
-          ref_hash: hashSecretReference(reference),
-        }),
-      );
-    },
+    referencesResult.value,
   );
 
+  const stdout =
+    validationResult.outputLines.length > 0
+      ? `${validationResult.outputLines.join("\n")}\n`
+      : "";
   if (validationResult.outputLines.length > 0) {
-    process.stdout.write(`${validationResult.outputLines.join("\n")}\n`);
+    return {
+      exitCode: validationResult.ok ? 0 : 1,
+      stderr,
+      stdout,
+    };
   }
 
-  return validationResult.ok ? 0 : 1;
+  return {
+    exitCode: validationResult.ok ? 0 : 1,
+    stderr,
+    stdout,
+  };
 }
