@@ -18,6 +18,7 @@ export type CliOptions = {
   readonly debugFormat: DebugFormat;
   readonly explicitProfile: string | undefined;
   readonly help: boolean;
+  readonly parseError?: string;
 };
 
 type ParsedIdentityOpCommand = {
@@ -25,6 +26,7 @@ type ParsedIdentityOpCommand = {
   readonly allowEnvToken: boolean;
   readonly commandArgs: readonly string[];
   readonly explicitProfile: string | undefined;
+  readonly parseError?: string;
 };
 
 /**
@@ -57,6 +59,19 @@ function buildIdentityOpCandidate(
 
   if (parsedFlags.unparsedTokens.length > 0) {
     return null;
+  }
+
+  if (
+    parsedFlags.booleanFlags.has("--read") &&
+    parsedFlags.booleanFlags.has("--write")
+  ) {
+    return {
+      accessOverride: undefined,
+      allowEnvToken: parsedFlags.booleanFlags.has("--allow-env-token"),
+      commandArgs: [identity, "op", ...opArgs],
+      explicitProfile: parsedFlags.valueFlags.get("--profile"),
+      parseError: "Cannot pass both --read and --write.",
+    };
   }
 
   return {
@@ -147,5 +162,8 @@ export function parseCliOptions(argv: readonly string[]): CliOptions {
       argv.length === 0 ||
       parsedRootFlags.booleanFlags.has("--help") ||
       parsedRootFlags.booleanFlags.has("-h"),
+    ...(parsedIdentityOpCommand?.parseError === undefined
+      ? {}
+      : { parseError: parsedIdentityOpCommand.parseError }),
   };
 }

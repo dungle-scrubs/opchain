@@ -4,6 +4,7 @@ import { parse } from "toml";
 
 const ACCESS_MODES = ["auto", "default"] as const;
 const KEYCHAIN_BACKENDS = ["helper", "security"] as const;
+const PATH_SEGMENT_PATTERN = /^[A-Za-z0-9_-]+$/;
 
 type AccessMode = (typeof ACCESS_MODES)[number];
 type KeychainBackend = (typeof KEYCHAIN_BACKENDS)[number];
@@ -144,7 +145,7 @@ function parseIdentities(
     entries.map(([identityName, identityValue]) => [
       identityName,
       parseIdentity(
-        identityName,
+        validateConfigKey(identityName, `identities.${identityName}`),
         readRecord(identityValue, `identities.${identityName}`),
       ),
     ]),
@@ -209,7 +210,10 @@ function parseProfiles(
 
   return Object.fromEntries(
     entries.map(([profileName, profileValue]) => [
-      profileName,
+      validateConfigKey(
+        profileName,
+        `identities.${identityName}.profiles.${profileName}`,
+      ),
       {
         keychainAccount: readString(
           readRecord(
@@ -222,6 +226,23 @@ function parseProfiles(
       },
     ]),
   );
+}
+
+/**
+ * Validates one config key that is reused as a local path segment.
+ *
+ * @param value - Config key value.
+ * @param path - Fully qualified field path for error messages.
+ * @returns {string} Validated key.
+ */
+function validateConfigKey(value: string, path: string): string {
+  if (!PATH_SEGMENT_PATTERN.test(value)) {
+    throw new ConfigError(
+      `${path} must contain only letters, numbers, underscores, and hyphens.`,
+    );
+  }
+
+  return value;
 }
 
 /**

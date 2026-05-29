@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 
+import { buildTokenChildEnv } from "../cli/child-env.ts";
 import { parseJsonText } from "../cli/io.ts";
 import { resolveOpPath } from "../cli/paths.ts";
 
@@ -31,10 +32,7 @@ export function readOpItemJson(
     ["item", "get", selector, "--format", "json"],
     {
       encoding: "utf8",
-      env: {
-        ...process.env,
-        OP_SERVICE_ACCOUNT_TOKEN: token,
-      },
+      env: buildTokenChildEnv(token),
     },
   );
   if (opResult.error || opResult.status !== 0) {

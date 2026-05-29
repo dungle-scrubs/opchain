@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 
+import { buildTokenChildEnv } from "../cli/child-env.ts";
 import { resolveOpPath } from "../cli/paths.ts";
 
 export type SecretValidationOutcome = "error" | "ok";
@@ -42,10 +43,7 @@ export function validateSecretReferences(
   for (const reference of references) {
     const opResult = spawnSync(resolveOpPath(), ["read", reference], {
       encoding: "utf8",
-      env: {
-        ...process.env,
-        OP_SERVICE_ACCOUNT_TOKEN: token,
-      },
+      env: buildTokenChildEnv(token),
     });
 
     if (opResult.error || opResult.status !== 0) {

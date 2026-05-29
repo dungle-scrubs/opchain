@@ -1,6 +1,8 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+const PATH_SEGMENT_PATTERN = /^[A-Za-z0-9_-]+$/;
+
 /**
  * Resolves the config path using the documented default location, allowing tests to override it.
  *
@@ -46,6 +48,12 @@ export function resolveOpPath(): string {
  * @returns {string} Per-identity expiry state path.
  */
 export function resolveExpiryStatePath(identityName: string): string {
+  if (!PATH_SEGMENT_PATTERN.test(identityName)) {
+    throw new Error(
+      "Identity names used for expiry state must contain only letters, numbers, underscores, and hyphens.",
+    );
+  }
+
   return join(
     homedir(),
     ".config",

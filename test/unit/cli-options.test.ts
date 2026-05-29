@@ -124,4 +124,26 @@ describe("parseCliOptions", () => {
     expect(result.debugFormat).toBe("text");
     expect(result.commandArgs).toEqual(["doctor"]);
   });
+
+  test("rejects conflicting read and write overrides", () => {
+    const result = parseCliOptions([
+      "human",
+      "--read",
+      "--write",
+      "op",
+      "vault",
+      "list",
+    ]);
+
+    expect(result).toEqual({
+      accessOverride: undefined,
+      allowEnvToken: false,
+      commandArgs: ["human", "op", "vault", "list"],
+      debug: false,
+      debugFormat: "text",
+      explicitProfile: undefined,
+      help: false,
+      parseError: "Cannot pass both --read and --write.",
+    });
+  });
 });
