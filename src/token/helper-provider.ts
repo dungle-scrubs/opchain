@@ -1,11 +1,10 @@
-import { spawnSync } from "node:child_process";
-
 import {
   createProviderEmptyTokenError,
   createProviderExitCodeError,
   createProviderStartError,
   type TokenProviderResult,
 } from "./token-provider.ts";
+import { runTokenCommand } from "./command-backend.ts";
 
 type HelperTokenRequest = {
   readonly accountName: string;
@@ -22,25 +21,27 @@ type HelperTokenRequest = {
 export async function getTokenFromHelper(
   request: HelperTokenRequest,
 ): Promise<TokenProviderResult> {
-  const commandResult = spawnSync(
-    request.helperPath,
-    ["get", "--service", request.serviceName, "--account", request.accountName],
-    {
-      encoding: "utf8",
-      env: process.env,
-    },
-  );
+  const commandResult = runTokenCommand(request.helperPath, [
+    "get",
+    "--service",
+    request.serviceName,
+    "--account",
+    request.accountName,
+  ]);
 
-  if (commandResult.error) {
+  if (!commandResult.ok && commandResult.error.reason === "start") {
     return {
       error: createProviderStartError("helper"),
       ok: false,
     };
   }
 
-  if (commandResult.status !== 0) {
+  if (!commandResult.ok) {
     return {
-      error: createProviderExitCodeError("helper", commandResult.status ?? 1),
+      error: createProviderExitCodeError(
+        "helper",
+        commandResult.error.exitCode ?? 1,
+      ),
       ok: false,
     };
   }

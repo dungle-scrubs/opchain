@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { runTokenCommand } from "./command-backend.ts";
 
 type RemoveTokenWithHelperRequest = {
   readonly accountName: string;
@@ -29,32 +29,25 @@ export class TokenMutationError extends Error {
 export async function removeTokenWithHelper(
   request: RemoveTokenWithHelperRequest,
 ): Promise<RemoveTokenResult> {
-  const commandResult = spawnSync(
-    request.helperPath,
-    [
-      "remove",
-      "--service",
-      request.serviceName,
-      "--account",
-      request.accountName,
-    ],
-    {
-      encoding: "utf8",
-      env: process.env,
-    },
-  );
+  const commandResult = runTokenCommand(request.helperPath, [
+    "remove",
+    "--service",
+    request.serviceName,
+    "--account",
+    request.accountName,
+  ]);
 
-  if (commandResult.error) {
+  if (!commandResult.ok && commandResult.error.reason === "start") {
     return {
       error: new TokenMutationError("helper token remove failed to start."),
       ok: false,
     };
   }
 
-  if (commandResult.status !== 0) {
+  if (!commandResult.ok) {
     return {
       error: new TokenMutationError(
-        `helper token remove failed with exit code ${commandResult.status ?? 1}.`,
+        `helper token remove failed with exit code ${commandResult.error.exitCode ?? 1}.`,
       ),
       ok: false,
     };
