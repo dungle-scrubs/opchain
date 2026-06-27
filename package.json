@@ -1,0 +1,44 @@
+{
+  "name": "opchain",
+  "version": "0.1.0",
+  "description": "macOS-first CLI for 1Password service-account workflows",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dungle-scrubs/opchain.git"
+  },
+  "bin": {
+    "opchain": "dist/opchain",
+    "oprun": "dist/oprun"
+  },
+  "files": [
+    "dist/",
+    "README.md",
+    "MIGRATION.md",
+    "PACKAGING.md",
+    "SECURITY.md"
+  ],
+  "scripts": {
+    "build": "bun build src/index.ts --compile --outfile dist/opchain && bun build src/oprun.ts --compile --outfile dist/oprun",
+    "format": "biome format --write .",
+    "install-local": "./scripts/install-local.sh",
+    "lint": "biome lint .",
+    "pack:dry-run": "npm pack --dry-run",
+    "prepare": "test -d .git && husky || true",
+    "test": "bun test",
+    "test:integration": "bun test test/integration",
+    "test:unit": "bun test test/unit",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "commander": "14.0.3",
+    "toml": "3.0.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.4.7",
+    "@types/bun": "1.3.10",
+    "husky": "9.1.7",
+    "typescript": "5.9.3"
+  }
+}

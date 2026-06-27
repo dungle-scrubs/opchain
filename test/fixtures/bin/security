@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# find-generic-password -w -s <service> -a <account>
+if [[ "${1:-}" == "find-generic-password" && "${2:-}" == "-w" && "${3:-}" == "-s" && -n "${4:-}" && "${5:-}" == "-a" && -n "${6:-}" ]]; then
+  if [[ -n "${OPCHAIN_TEST_SECURITY_STDERR:-}" ]]; then
+    printf '%s\n' "$OPCHAIN_TEST_SECURITY_STDERR" >&2
+    exit "${OPCHAIN_TEST_SECURITY_EXIT_CODE:-1}"
+  fi
+  if [[ -n "${OPCHAIN_TEST_SECURITY_SLEEP_MS:-}" ]]; then
+    sleep "$(awk "BEGIN { print ${OPCHAIN_TEST_SECURITY_SLEEP_MS} / 1000 }")"
+  fi
+  if [[ -n "${OPCHAIN_TEST_SECURITY_TOKEN_LOG:-}" ]]; then
+    { printf 'service=%s\n' "$4"; printf 'account=%s\n' "$6"; } > "$OPCHAIN_TEST_SECURITY_TOKEN_LOG"
+  fi
+  printf '%s\n' "${OPCHAIN_TEST_SECURITY_TOKEN:-}"
+  exit 0
+fi
+
+# add-generic-password -a <account> -s <service> -w <token>
+if [[ "${1:-}" == "add-generic-password" && "${2:-}" == "-a" && -n "${3:-}" && "${4:-}" == "-s" && -n "${5:-}" && "${6:-}" == "-w" && -n "${7:-}" ]]; then
+  if [[ -n "${OPCHAIN_TEST_SECURITY_STDERR:-}" ]]; then
+    printf '%s\n' "$OPCHAIN_TEST_SECURITY_STDERR" >&2
+    exit "${OPCHAIN_TEST_SECURITY_EXIT_CODE:-1}"
+  fi
+  if [[ -n "${OPCHAIN_TEST_SECURITY_ADD_LOG:-}" ]]; then
+    { printf 'service=%s\n' "$5"; printf 'account=%s\n' "$3"; printf 'token=%s\n' "$7"; } > "$OPCHAIN_TEST_SECURITY_ADD_LOG"
+  fi
+  exit 0
+fi
+
+# delete-generic-password -a <account> -s <service>
+if [[ "${1:-}" == "delete-generic-password" && "${2:-}" == "-a" && -n "${3:-}" && "${4:-}" == "-s" && -n "${5:-}" ]]; then
+  if [[ -n "${OPCHAIN_TEST_SECURITY_STDERR:-}" ]]; then
+    printf '%s\n' "$OPCHAIN_TEST_SECURITY_STDERR" >&2
+    exit "${OPCHAIN_TEST_SECURITY_EXIT_CODE:-1}"
+  fi
+  if [[ -n "${OPCHAIN_TEST_SECURITY_REMOVE_LOG:-}" ]]; then
+    { printf 'service=%s\n' "$5"; printf 'account=%s\n' "$3"; } > "$OPCHAIN_TEST_SECURITY_REMOVE_LOG"
+  fi
+  exit 0
+fi
+
+echo "invalid security invocation" >&2
+exit 1
