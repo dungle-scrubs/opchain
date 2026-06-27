@@ -1,0 +1,20 @@
+# compiled binary
+/opchain
+/oprun
+*.bun-build
+
+node_modules
+coverage
+dist
+build
+*.log
+*.backup
+.DS_Store
+.env
+.env.*
+!.env.op
+!.env.*.op
+
+# internal planning / readiness notes (not for public repo)
+/.plans/
+/FINAL_READINESS.md
