@@ -39,9 +39,18 @@ named profiles, an access mode, and an optional vault allowlist. Profiles map
 to Keychain account names. A typical identity has `read` and `write` profiles
 backed by separate service-account tokens.
 
-In `auto` mode, read-safe commands like `op vault list` resolve a profile
-automatically. Everything else requires explicit profile selection (`--read`,
-`--write`, or `--profile <name>`).
+Profile resolution for `op` commands is fail-closed. A profile resolves
+automatically only in these cases:
+
+- The identity defines exactly one profile. That single profile resolves for
+  read-safe commands regardless of `default_mode`.
+- The identity is in `auto` mode and defines a `read` profile. Read-safe
+  commands like `op vault list` resolve the `read` profile automatically.
+
+Everything else requires explicit profile selection (`--read`, `--write`, or
+`--profile <name>`). Write and other non-read-safe command shapes are never
+auto-resolved: they always require an explicit profile or access override, so
+they fail closed until you name one.
 
 ## Quick start
 
@@ -112,15 +121,22 @@ opchain primary --allow-env-token op user list
 # List every op:// reference in a file
 opchain primary secrets list .env.op
 
-# Validate every reference resolves
-opchain primary secrets validate .env.op
+# Validate every reference in a single file resolves
+opchain primary secrets check .env.op
 
-# Validate all .env.op files under projects_dir
+# Validate one file or a whole directory of .env.op files
+opchain primary secrets validate .env.op
 opchain primary secrets validate --project-wide
 
 # Inspect metadata for one reference (secrets are never printed)
 opchain primary secrets inspect op://Services/Stripe/api_key
 ```
+
+`secrets check` and `secrets validate` run the same reference-resolution
+workflow; the difference is scope. `secrets check` requires an explicit file
+path and validates only that one file. `secrets validate` validates one file
+or, with `--project-wide`, every `.env.op` file under `projects_dir`. Neither
+command prints resolved secret values.
 
 ### Expiry tracking
 
@@ -163,9 +179,22 @@ or child-process stdout/stderr.
 
 ## Security
 
-opchain keeps tokens out of the parent environment. A token stored in the
-Keychain and resolved through opchain is never visible to the shell, `ps`,
-shell history, or agent context.
+opchain keeps tokens out of the parent environment. On the resolve-and-inject
+path - when opchain pulls a stored token and passes it to an `op` child process
+- the token is never placed in the parent shell environment, `ps` output,
+shell history, or agent context. It exists only inside the delegated child
+process.
+
+There is one deliberate exception, on the write path. `opchain token set`
+stores a token by shelling out to `/usr/bin/security add-generic-password`,
+which has no stdin mode for the password on this subcommand, so the token is
+passed on that child's argv. During the brief lifetime of that `security`
+process the token is visible to other processes running as the same macOS user
+(for example via `ps`). This is consistent with the threat model in
+[SECURITY.md](SECURITY.md), which does not defend against a malicious process
+running as the same user. `token set` still never accepts the token on
+opchain's own command line: input is read from a hidden TTY prompt or
+`--stdin`.
 
 opchain does not provide hard isolation between identities under the same macOS
 account. The primary boundary is the 1Password service-account token scope
