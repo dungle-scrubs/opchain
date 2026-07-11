@@ -1,25 +1,13 @@
 import { spawnSync } from "node:child_process";
 
+import { buildSanitizedEnv } from "../env/sanitize.ts";
+
 type TokenCommandResult =
   | { readonly ok: true; readonly stdout: string }
   | { readonly error: TokenCommandError; readonly ok: false };
 
 const DEFAULT_PROVIDER_STDOUT_MAX_BYTES = 64 * 1024;
 const DEFAULT_PROVIDER_TIMEOUT_MS = 30_000;
-
-const PROVIDER_ENV_BASE_KEYS = [
-  "HOME",
-  "LANG",
-  "LC_ALL",
-  "LC_CTYPE",
-  "LOGNAME",
-  "PATH",
-  "SHELL",
-  "SSH_AUTH_SOCK",
-  "TERM",
-  "TMPDIR",
-  "USER",
-] as const;
 
 /**
  * Owns environment construction for token-provider subprocesses.
@@ -30,26 +18,12 @@ const PROVIDER_ENV_BASE_KEYS = [
 export function buildProviderChildEnv(
   sourceEnv: NodeJS.ProcessEnv = process.env,
 ): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = {};
-
-  for (const key of PROVIDER_ENV_BASE_KEYS) {
-    const value = sourceEnv[key];
-    if (value !== undefined) {
-      env[key] = value;
-    }
-  }
-
-  for (const [key, value] of Object.entries(sourceEnv)) {
-    if (
-      value !== undefined &&
-      (key.startsWith("OPCHAIN_TEST_HELPER_") ||
-        key.startsWith("OPCHAIN_TEST_SECURITY_"))
-    ) {
-      env[key] = value;
-    }
-  }
-
-  return env;
+  return buildSanitizedEnv({
+    sourceEnv,
+    prefixPredicate: (key) =>
+      key.startsWith("OPCHAIN_TEST_HELPER_") ||
+      key.startsWith("OPCHAIN_TEST_SECURITY_"),
+  });
 }
 
 /**
