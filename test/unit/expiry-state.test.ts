@@ -52,6 +52,20 @@ describe("expiry state", () => {
     ).toThrow("Invalid expiry state: identity must be a non-empty string.");
   });
 
+  test("rejects identity names that could traverse the state directory", () => {
+    for (const unsafe of ["../../pwn", "a/b", "a.json", "."]) {
+      expect(() =>
+        parseExpiryState({
+          identity: unsafe,
+          trackedItems: [],
+          version: 1,
+        }),
+      ).toThrow(
+        "Invalid expiry state: identity must contain only letters, numbers, underscores, and hyphens.",
+      );
+    }
+  });
+
   test("rejects invalid tracked item canonical fields", () => {
     expect(() =>
       parseExpiryState({

@@ -4,6 +4,28 @@ import { join } from "node:path";
 const PATH_SEGMENT_PATTERN = /^[A-Za-z0-9_-]+$/;
 
 /**
+ * Asserts a value is safe to use as a single local filesystem path segment.
+ *
+ * Rejects traversal (`..`), separators (`/`), dots, and empty values so
+ * untrusted names cannot escape their intended directory. This is the single
+ * owner of the traversal-safety rule; other modules must consume it rather than
+ * re-deriving the pattern.
+ *
+ * @param value - Candidate path segment.
+ * @param context - Human-readable subject for the error message.
+ * @returns {string} The validated value, unchanged.
+ */
+export function assertPathSegment(value: string, context: string): string {
+  if (!PATH_SEGMENT_PATTERN.test(value)) {
+    throw new Error(
+      `${context} must contain only letters, numbers, underscores, and hyphens.`,
+    );
+  }
+
+  return value;
+}
+
+/**
  * Resolves the config path using the documented default location, allowing tests to override it.
  *
  * @returns {string} Default config file path.
@@ -39,11 +61,7 @@ export function resolveOpPath(): string {
  * @returns {string} Per-identity expiry state path.
  */
 export function resolveExpiryStatePath(identityName: string): string {
-  if (!PATH_SEGMENT_PATTERN.test(identityName)) {
-    throw new Error(
-      "Identity names used for expiry state must contain only letters, numbers, underscores, and hyphens.",
-    );
-  }
+  assertPathSegment(identityName, "Identity names used for expiry state");
 
   return join(
     homedir(),

@@ -22,4 +22,21 @@ describe("buildTokenChildEnv", () => {
     expect(env.PATH).toBe("/usr/bin:/bin");
     expect(env.TMPDIR).toBe("/tmp");
   });
+
+  test("denies non-allowlisted secret vars and near-miss prefixes while passing genuine allowlisted vars", () => {
+    const env = buildTokenChildEnv("resolved-profile-token", {
+      AWS_SECRET_ACCESS_KEY: "aws-secret-value",
+      OPCHAIN_SECRET: "near-miss-secret",
+      OPCHAIN_TEST_OP_LOG: "/tmp/op-log",
+      PATH: "/usr/bin:/bin",
+    });
+
+    // Representative non-allowlisted secret var is stripped.
+    expect(env.AWS_SECRET_ACCESS_KEY).toBeUndefined();
+    // Near-miss prefix (not OPCHAIN_TEST_OP_) is stripped.
+    expect(env.OPCHAIN_SECRET).toBeUndefined();
+    // Genuinely allowlisted passthrough var and base var pass through.
+    expect(env.OPCHAIN_TEST_OP_LOG).toBe("/tmp/op-log");
+    expect(env.PATH).toBe("/usr/bin:/bin");
+  });
 });

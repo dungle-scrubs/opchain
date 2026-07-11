@@ -113,6 +113,17 @@ Disallowed input modes:
 - positional token arguments
 - implicit reads from ambient env
 
+This rule governs opchain's own command line. It does not accept the token on
+opchain's argv. Internally, `token set` stores the token by invoking
+`/usr/bin/security add-generic-password`, which has no stdin mode for the
+password on this subcommand, so the token is passed on that `security` child's
+argv. For the brief lifetime of that process the token is visible to other
+processes running as the same macOS user. That exposure is in scope of the
+threat model above: opchain does not defend against a malicious process
+running as the same user. The resolve-and-inject path keeps tokens out of the
+parent env, `ps`, shell history, and agent context; this same-user argv
+exposure is limited to the `token set` write path.
+
 ### Expiry tracking uses canonical IDs
 
 Persist expiry records by:

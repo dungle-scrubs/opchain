@@ -41,7 +41,7 @@ describe("readOpItemJson", () => {
       vault: { id: "vault-uuid-1", name: "Services" },
     });
     expect(readFileSync(logPath, "utf8")).toContain(
-      "args=item get item-123 --format json",
+      "args=item get --format json -- item-123",
     );
     expect(readFileSync(logPath, "utf8")).toContain("token=token-from-test");
   });

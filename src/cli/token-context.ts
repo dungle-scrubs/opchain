@@ -17,6 +17,18 @@ export type ResolvedIdentityContext = {
 };
 
 /**
+ * Optional telemetry hooks interleaved with the resolution chain.
+ *
+ * Callbacks let a caller emit its own events between the config, profile, and
+ * token resolution steps without duplicating the pipeline. All hooks are
+ * additive and default to undefined so existing callers are unaffected.
+ */
+export type IdentityContextHooks = {
+  readonly onClassified?: () => void;
+  readonly onProfileResolved?: (resolvedProfile: ResolvedProfile) => void;
+};
+
+/**
  * Resolves a token for one configured account with provider telemetry.
  *
  * @param options - Parsed CLI options.
@@ -56,6 +68,7 @@ export async function resolveTokenForAccount(
  *
  * @param options - Parsed CLI options.
  * @param request - Identity resolution request.
+ * @param hooks - Optional telemetry hooks fired between resolution steps.
  * @returns {Promise<RuntimeResult<ResolvedIdentityContext>>} Resolved identity context or a printable error.
  */
 export async function resolveIdentityContext(
@@ -67,11 +80,14 @@ export async function resolveIdentityContext(
     readonly explicitProfile: string | undefined;
     readonly identityName: string;
   },
+  hooks: IdentityContextHooks = {},
 ): Promise<RuntimeResult<ResolvedIdentityContext>> {
   const configContext = await loadConfigContext(options);
   if (!configContext.ok) {
     return configContext;
   }
+
+  hooks.onClassified?.();
 
   const resolvedProfile = resolveOpProfile(
     configContext.value.config,
@@ -86,6 +102,8 @@ export async function resolveIdentityContext(
       ok: false,
     };
   }
+
+  hooks.onProfileResolved?.(resolvedProfile);
 
   const tokenResult = await resolveTokenForAccount(
     options,

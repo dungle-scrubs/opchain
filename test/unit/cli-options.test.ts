@@ -83,6 +83,61 @@ describe("parseCliOptions", () => {
     });
   });
 
+  test("forwards root-name flags appearing after the op marker to the child", () => {
+    const result = parseCliOptions([
+      "human",
+      "op",
+      "read",
+      "--debug",
+      "secret",
+    ]);
+
+    expect(result).toEqual({
+      accessOverride: undefined,
+      allowEnvToken: false,
+      commandArgs: ["human", "op", "read", "--debug", "secret"],
+      debug: false,
+      debugFormat: "text",
+      explicitProfile: undefined,
+      help: false,
+    });
+  });
+
+  test("does not treat --help after the op marker as opchain help", () => {
+    const result = parseCliOptions(["human", "op", "item", "get", "--help"]);
+
+    expect(result).toEqual({
+      accessOverride: undefined,
+      allowEnvToken: false,
+      commandArgs: ["human", "op", "item", "get", "--help"],
+      debug: false,
+      debugFormat: "text",
+      explicitProfile: undefined,
+      help: false,
+    });
+  });
+
+  test("forwards --debug-format and its value after the op marker", () => {
+    const result = parseCliOptions([
+      "human",
+      "op",
+      "read",
+      "--debug-format",
+      "json",
+      "secret",
+    ]);
+
+    expect(result).toEqual({
+      accessOverride: undefined,
+      allowEnvToken: false,
+      commandArgs: ["human", "op", "read", "--debug-format", "json", "secret"],
+      debug: false,
+      debugFormat: "text",
+      explicitProfile: undefined,
+      help: false,
+    });
+  });
+
   test("does not strip profile flags for non-op commands", () => {
     const result = parseCliOptions(["token", "set", "--profile", "writer"]);
 

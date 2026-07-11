@@ -4,20 +4,24 @@ import { createTelemetryEvent } from "../telemetry/event.ts";
 
 import { buildTokenChildEnv } from "../cli/child-env.ts";
 import type { CommandRequest } from "../cli/command-request.ts";
-import { loadConfigContext } from "../cli/config-context.ts";
 import {
   formatOpTimeoutMessage,
   resolveOpTimeoutMs,
 } from "../cli/op-timeout.ts";
 import { resolveOpPath } from "../cli/paths.ts";
-import { classifyOpCommand, resolveOpProfile } from "../cli/profile.ts";
+import { classifyOpCommand } from "../cli/profile.ts";
 import {
   commandFailure,
   commandSuccess,
   type CommandResult,
 } from "../cli/result.ts";
 import { writeTelemetry } from "../cli/telemetry.ts";
-import { resolveTokenForAccount } from "../cli/token-context.ts";
+import { resolveIdentityContext } from "../cli/token-context.ts";
+
+/**
+ * Grace period after SIGTERM before escalating a stuck `op` child to SIGKILL.
+ */
+const OP_SIGKILL_GRACE_MS = 2_000;
 
 type OpChildResult =
   | {
@@ -53,6 +57,13 @@ function runOpChild(
     let stdoutBytes = 0;
     let settled = false;
     let timedOut = false;
+    let killTimer: ReturnType<typeof setTimeout> | undefined;
+    const clearTimers = (): void => {
+      clearTimeout(timeout);
+      if (killTimer !== undefined) {
+        clearTimeout(killTimer);
+      }
+    };
     const timeout = setTimeout(() => {
       if (settled) {
         return;
@@ -60,6 +71,16 @@ function runOpChild(
 
       timedOut = true;
       child.kill("SIGTERM");
+      // A SIGTERM-ignoring child still holds the service-account token, so
+      // escalate to an unblockable SIGKILL to guarantee the process exits and
+      // the result promise settles via the close handler below.
+      killTimer = setTimeout(() => {
+        if (settled) {
+          return;
+        }
+
+        child.kill("SIGKILL");
+      }, OP_SIGKILL_GRACE_MS);
     }, timeoutMs);
 
     child.stdout.on("data", (chunk: Buffer) => {
@@ -78,7 +99,7 @@ function runOpChild(
       }
 
       settled = true;
-      clearTimeout(timeout);
+      clearTimers();
       resolve({ error, ok: false });
     });
 
@@ -88,7 +109,7 @@ function runOpChild(
       }
 
       settled = true;
-      clearTimeout(timeout);
+      clearTimers();
       resolve({
         exitCode: code ?? 1,
         ok: true,
@@ -127,39 +148,33 @@ export async function runIdentityOp(
     );
   }
 
-  const configContext = await loadConfigContext(options);
-  if (!configContext.ok) {
-    return commandFailure(`${configContext.error}\n`);
-  }
-
-  writeTelemetry(
+  const identityContext = await resolveIdentityContext(
     options,
-    createTelemetryEvent("op.command.classify", {
-      classification: classification ?? "explicit_profile",
-      command_name: opArgs.slice(0, 2).join(" "),
-      identity: identityName,
-    }),
+    {
+      accessOverride: options.accessOverride,
+      allowEnvToken: options.allowEnvToken,
+      classification: classification ?? "read_safe",
+      explicitProfile: options.explicitProfile,
+      identityName,
+    },
+    {
+      onClassified: () => {
+        writeTelemetry(
+          options,
+          createTelemetryEvent("op.command.classify", {
+            classification: classification ?? "explicit_profile",
+            command_name: opArgs.slice(0, 2).join(" "),
+            identity: identityName,
+          }),
+        );
+      },
+    },
   );
-
-  const resolvedProfile = resolveOpProfile(
-    configContext.value.config,
-    identityName,
-    classification ?? "read_safe",
-    options.accessOverride,
-    options.explicitProfile,
-  );
-  if (typeof resolvedProfile === "string") {
-    return commandFailure(`${resolvedProfile}\n`);
+  if (!identityContext.ok) {
+    return commandFailure(`${identityContext.error}\n`);
   }
 
-  const tokenResult = await resolveTokenForAccount(
-    options,
-    resolvedProfile.accountName,
-    options.allowEnvToken,
-  );
-  if (!tokenResult.ok) {
-    return commandFailure(`${tokenResult.error}\n`);
-  }
+  const { resolvedProfile, token } = identityContext.value;
 
   writeTelemetry(
     options,
@@ -170,7 +185,7 @@ export async function runIdentityOp(
     }),
   );
 
-  const opResult = await runOpChild(opArgs, tokenResult.value);
+  const opResult = await runOpChild(opArgs, token);
 
   if (!opResult.ok) {
     return commandFailure(`${opResult.error.message}\n`);
