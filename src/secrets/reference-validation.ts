@@ -42,7 +42,7 @@ export function validateSecretReferences(
   const outputLines: string[] = [];
 
   for (const reference of references) {
-    const opResult = spawnSync(resolveOpPath(), ["read", reference], {
+    const opResult = spawnSync(resolveOpPath(), ["read", "--", reference], {
       encoding: "utf8",
       env: buildTokenChildEnv(token),
       timeout: resolveOpTimeoutMs(),

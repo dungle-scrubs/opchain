@@ -25,9 +25,20 @@ if [[ "${1:-}" == "run" ]]; then
   exit 0
 fi
 
-if [[ "$1" == "read" && -n "${2:-}" ]]; then
+if [[ "$1" == "read" && $# -ge 2 ]]; then
+  # opchain now passes an end-of-options separator: `read -- <reference>`.
+  # Extract the reference as the final positional so this stays correct
+  # whether or not the `--` guard is present.
+  reference="${@: -1}"
+
+  if [[ -n "${OPCHAIN_TEST_OP_ENV_LOG:-}" ]]; then
+    printf 'token=%s override=%s\n' \
+      "${OP_SERVICE_ACCOUNT_TOKEN:-}" \
+      "${OPCHAIN_TOKEN_OVERRIDE:+present}" >> "$OPCHAIN_TEST_OP_ENV_LOG"
+  fi
+
   if [[ -n "${OPCHAIN_TEST_OP_READ_LOG:-}" ]]; then
-    printf '%s\n' "$2" >> "$OPCHAIN_TEST_OP_READ_LOG"
+    printf '%s\n' "$reference" >> "$OPCHAIN_TEST_OP_READ_LOG"
   fi
 
   if [[ -n "${OPCHAIN_TEST_OP_READ_STDERR:-}" ]]; then
@@ -39,7 +50,7 @@ if [[ "$1" == "read" && -n "${2:-}" ]]; then
   exit 0
 fi
 
-if [[ "$1" == "item" && "$2" == "get" && -n "${3:-}" && "$4" == "--format" && "$5" == "json" ]]; then
+if [[ "$1" == "item" && "$2" == "get" ]]; then
   if [[ -n "${OPCHAIN_TEST_OP_ITEM_STDERR:-}" ]]; then
     printf '%s\n' "$OPCHAIN_TEST_OP_ITEM_STDERR" >&2
     exit "${OPCHAIN_TEST_OP_ITEM_EXIT_CODE:-1}"

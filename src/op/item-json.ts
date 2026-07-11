@@ -30,7 +30,7 @@ export function readOpItemJson(
 ): OpItemJsonResult {
   const opResult = spawnSync(
     resolveOpPath(),
-    ["item", "get", selector, "--format", "json"],
+    ["item", "get", "--format", "json", "--", selector],
     {
       encoding: "utf8",
       env: buildTokenChildEnv(token),
