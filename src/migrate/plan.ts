@@ -31,6 +31,59 @@ type LegacyExpiryResolution = {
 };
 
 /**
+ * Escapes a string for safe embedding inside a TOML basic string.
+ *
+ * Applies TOML basic-string escaping rules: backslash and double-quote are
+ * escaped, the named control shorthands are used where TOML defines them, and
+ * any remaining control character is emitted as a `\uXXXX` escape. The result
+ * is intended to be wrapped in double quotes; parsing it back with the same
+ * TOML parser reproduces the original value exactly.
+ *
+ * @param value - Raw string value to escape.
+ * @returns {string} Escaped contents for a double-quoted TOML basic string.
+ */
+export function escapeTomlString(value: string): string {
+  let result = "";
+
+  for (const char of value) {
+    switch (char) {
+      case "\\":
+        result += "\\\\";
+        break;
+      case '"':
+        result += '\\"';
+        break;
+      case "\b":
+        result += "\\b";
+        break;
+      case "\t":
+        result += "\\t";
+        break;
+      case "\n":
+        result += "\\n";
+        break;
+      case "\f":
+        result += "\\f";
+        break;
+      case "\r":
+        result += "\\r";
+        break;
+      default: {
+        const codePoint = char.codePointAt(0) ?? 0;
+        if (codePoint <= 0x1f || codePoint === 0x7f) {
+          result += `\\u${codePoint.toString(16).toUpperCase().padStart(4, "0")}`;
+        } else {
+          result += char;
+        }
+        break;
+      }
+    }
+  }
+
+  return result;
+}
+
+/**
  * Builds the migrated v2 config TOML for the current single-machine setup.
  *
  * @param legacyConfig - Parsed legacy config values.
@@ -43,7 +96,7 @@ function buildMigratedConfigToml(
 
   return [
     "[defaults]",
-    `projects_dir = "${projectsDir}"`,
+    `projects_dir = "${escapeTomlString(projectsDir)}"`,
     `expires_threshold_days = ${legacyConfig.expiresThreshold ?? 14}`,
     "enforce_vault_allowlist = true",
     "",
@@ -52,10 +105,10 @@ function buildMigratedConfigToml(
     'vaults = ["Example"]',
     "",
     "[identities.primary.profiles.read]",
-    `keychain_account = "${legacyConfig.readAccount ?? "opchain-read"}"`,
+    `keychain_account = "${escapeTomlString(legacyConfig.readAccount ?? "opchain-read")}"`,
     "",
     "[identities.primary.profiles.write]",
-    `keychain_account = "${legacyConfig.writeAccount ?? "opchain-write"}"`,
+    `keychain_account = "${escapeTomlString(legacyConfig.writeAccount ?? "opchain-write")}"`,
     "",
   ].join("\n");
 }

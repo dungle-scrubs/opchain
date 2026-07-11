@@ -2,9 +2,13 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
+import { parse } from "toml";
 
 import type { CliOptions } from "../../src/cli/options.ts";
-import { buildMigrationPlan } from "../../src/migrate/plan.ts";
+import {
+  buildMigrationPlan,
+  escapeTomlString,
+} from "../../src/migrate/plan.ts";
 import { withEnv } from "../helpers/with-env.ts";
 
 /**
@@ -58,6 +62,30 @@ function writeLegacyExpires(
   writeFileSync(legacyExpiresPath, lines.join("\n"), "utf8");
   return legacyExpiresPath;
 }
+
+describe("escapeTomlString", () => {
+  test("round-trips a value containing a quote and a newline", () => {
+    const original = 'line-one"with-quote\nline-two\ttabbed';
+    const toml = `value = "${escapeTomlString(original)}"`;
+
+    const parsed = parse(toml) as { value: string };
+
+    expect(parsed.value).toBe(original);
+  });
+
+  test("round-trips backslashes, carriage returns, and control characters", () => {
+    const original = "a\\b\r\x00\x7f end";
+    const toml = `value = "${escapeTomlString(original)}"`;
+
+    const parsed = parse(toml) as { value: string };
+
+    expect(parsed.value).toBe(original);
+  });
+
+  test("leaves ordinary values unchanged", () => {
+    expect(escapeTomlString("opchain-read")).toBe("opchain-read");
+  });
+});
 
 describe("buildMigrationPlan", () => {
   test("returns an error when the legacy config is missing", async () => {
@@ -149,6 +177,52 @@ describe("buildMigrationPlan", () => {
         vaultUuid: "vault-uuid-1",
       },
     ]);
+  });
+
+  test("escapes hostile legacy values so the generated TOML round-trips", async () => {
+    const homePath = mkdtempSync(join(tmpdir(), "opchain-home-"));
+    // A quote-injection attempt on a single line: the legacy loader collapses
+    // newlines, so the double-quote is the value that can reach the builder.
+    const hostileAccount = 'evil" }\nrogue_table = "injected';
+    const projectsDir = '/tmp/quote"and\\backslash';
+    const legacyConfigPath = writeLegacyConfig(homePath, [
+      `projects_dir=${projectsDir}`,
+      `read_account=${hostileAccount}`,
+      "write_account=opchain-write",
+      "expires_threshold=14",
+    ]);
+    const legacyExpiresPath = writeLegacyExpires(homePath, []);
+
+    const result = await withEnv(
+      {
+        HOME: homePath,
+        OPCHAIN_LEGACY_CONFIG_PATH: legacyConfigPath,
+        OPCHAIN_LEGACY_EXPIRES_PATH: legacyExpiresPath,
+      },
+      async () => buildMigrationPlan(createCliOptions()),
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error(result.error);
+    }
+
+    // The generated TOML must be valid and re-parseable with the same parser.
+    const parsed = parse(result.value.migratedConfigToml) as {
+      defaults: { projects_dir: string };
+      identities: {
+        primary: { profiles: { read: { keychain_account: string } } };
+      };
+    };
+
+    // The loader collapses the newline, so the value that reaches the builder
+    // is the first physical line's remainder; the double-quote round-trips
+    // exactly and injects no additional table or key.
+    expect(parsed.identities.primary.profiles.read.keychain_account).toBe(
+      'evil" }',
+    );
+    expect(parsed).not.toHaveProperty("rogue_table");
+    expect(parsed.defaults.projects_dir).toBe(projectsDir);
   });
 
   test("marks the plan as non-applicable when legacy read_account is missing", async () => {
