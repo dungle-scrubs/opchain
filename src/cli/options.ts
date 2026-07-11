@@ -132,6 +132,36 @@ function parseIdentityOpCommand(
 }
 
 /**
+ * Finds the `op` envelope boundary marker index in the raw argument vector.
+ *
+ * Scans left to right, skipping the value that follows a root value flag so a
+ * `--debug-format op` value is not mistaken for the marker. Returns the index of
+ * the first genuine `op` marker, or -1 when the argument vector has no envelope.
+ *
+ * @param argv - User-provided CLI arguments.
+ * @returns {number} Index of the `op` marker, or -1 when absent.
+ */
+function findOpEnvelopeIndex(argv: readonly string[]): number {
+  for (let index = 0; index < argv.length; index += 1) {
+    const token = argv[index];
+    if (token === undefined) {
+      continue;
+    }
+
+    if (ROOT_VALUE_FLAGS.has(token)) {
+      index += 1;
+      continue;
+    }
+
+    if (token === "op") {
+      return index;
+    }
+  }
+
+  return -1;
+}
+
+/**
  * Normalizes the debug format token.
  *
  * @param input - Raw parsed debug format value.
@@ -150,7 +180,13 @@ function normalizeDebugFormat(input: string | undefined): DebugFormat {
  * @returns {CliOptions} Parsed CLI options.
  */
 export function parseCliOptions(argv: readonly string[]): CliOptions {
-  const parsedRootFlags = parseFlagArguments(argv, {
+  const opEnvelopeIndex = findOpEnvelopeIndex(argv);
+  const rootFlagTokens =
+    opEnvelopeIndex === -1 ? argv : argv.slice(0, opEnvelopeIndex);
+  const opEnvelopeTokens =
+    opEnvelopeIndex === -1 ? [] : argv.slice(opEnvelopeIndex);
+
+  const parsedRootFlags = parseFlagArguments(rootFlagTokens, {
     booleanFlags: ROOT_BOOLEAN_FLAGS,
     valueFlags: ROOT_VALUE_FLAGS,
   });
@@ -168,15 +204,17 @@ export function parseCliOptions(argv: readonly string[]): CliOptions {
     };
   }
 
-  const parsedIdentityOpCommand = parseIdentityOpCommand(
-    parsedRootFlags.unparsedTokens,
-  );
+  const commandTokens = [
+    ...parsedRootFlags.unparsedTokens,
+    ...opEnvelopeTokens,
+  ];
+
+  const parsedIdentityOpCommand = parseIdentityOpCommand(commandTokens);
 
   return {
     accessOverride: parsedIdentityOpCommand?.accessOverride,
     allowEnvToken: parsedIdentityOpCommand?.allowEnvToken ?? false,
-    commandArgs:
-      parsedIdentityOpCommand?.commandArgs ?? parsedRootFlags.unparsedTokens,
+    commandArgs: parsedIdentityOpCommand?.commandArgs ?? commandTokens,
     debug: parsedRootFlags.booleanFlags.has("--debug"),
     debugFormat: normalizeDebugFormat(
       parsedRootFlags.valueFlags.get("--debug-format"),
