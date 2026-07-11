@@ -10,12 +10,14 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 
+import { assertPathSegment } from "../cli/paths.ts";
+
 type ExpiryTrackedItem = {
   readonly expiresAt?: string;
   readonly itemTitle: string;
   readonly itemUuid: string;
   readonly lastCheckedAt?: string;
-  readonly status?: "expiring" | "expired" | "healthy" | "missing";
+  readonly status?: "expiring" | "expired" | "healthy" | "invalid" | "missing";
   readonly vaultTitle: string;
   readonly vaultUuid: string;
 };
@@ -26,7 +28,13 @@ type ExpiryState = {
   readonly version: 1;
 };
 
-const EXPIRY_STATUSES = new Set(["expired", "expiring", "healthy", "missing"]);
+const EXPIRY_STATUSES = new Set([
+  "expired",
+  "expiring",
+  "healthy",
+  "invalid",
+  "missing",
+]);
 
 /**
  * Raised when persisted expiry state has an invalid schema.
@@ -171,6 +179,16 @@ export function parseExpiryState(input: unknown): ExpiryState {
   if (!isNonEmptyString(input.identity)) {
     throw new ExpiryStateError(
       "Invalid expiry state: identity must be a non-empty string.",
+    );
+  }
+
+  try {
+    assertPathSegment(input.identity, "Invalid expiry state: identity");
+  } catch (error) {
+    throw new ExpiryStateError(
+      error instanceof Error
+        ? error.message
+        : "Invalid expiry state: identity is not a safe path segment.",
     );
   }
 

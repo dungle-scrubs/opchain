@@ -2,10 +2,11 @@ import { readFile } from "node:fs/promises";
 
 import { parse } from "toml";
 
+import { assertPathSegment } from "../cli/paths.ts";
+
 import { expandHomePath } from "./path-normalization.ts";
 
 const ACCESS_MODES = ["auto", "default"] as const;
-const PATH_SEGMENT_PATTERN = /^[A-Za-z0-9_-]+$/;
 
 type AccessMode = (typeof ACCESS_MODES)[number];
 
@@ -225,13 +226,15 @@ function parseProfiles(
  * @returns {string} Validated key.
  */
 function validateConfigKey(value: string, path: string): string {
-  if (!PATH_SEGMENT_PATTERN.test(value)) {
+  try {
+    return assertPathSegment(value, path);
+  } catch (error) {
     throw new ConfigError(
-      `${path} must contain only letters, numbers, underscores, and hyphens.`,
+      error instanceof Error
+        ? error.message
+        : `${path} must contain only letters, numbers, underscores, and hyphens.`,
     );
   }
-
-  return value;
 }
 
 /**
