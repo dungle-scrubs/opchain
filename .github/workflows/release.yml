@@ -1,0 +1,55 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Compile binaries
+        run: |
+          bun build src/index.ts --compile \
+            --target=bun-darwin-arm64 --outfile dist/opchain
+          bun build src/oprun.ts --compile \
+            --target=bun-darwin-arm64 --outfile dist/oprun
+
+      - name: Package binaries
+        run: |
+          version="${GITHUB_REF_NAME}"
+          for name in opchain oprun; do
+            archive="${name}-${version}-macos-arm64.tar.gz"
+            tar -czf "${archive}" -C dist "${name}"
+            shasum -a 256 "${archive}" > "${archive}.sha256"
+          done
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "${GITHUB_REF_NAME}" \
+            --generate-notes \
+            *-macos-arm64.tar.gz \
+            *-macos-arm64.tar.gz.sha256
