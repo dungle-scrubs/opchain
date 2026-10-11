@@ -20,6 +20,7 @@ export type OpItemJsonResult =
  * @param selector - Item selector or reference.
  * @param failureMessage - Message returned when the child command fails.
  * @param invalidPayloadMessage - Message returned when the JSON payload is malformed.
+ * @param vault - Optional vault name filter inserted before the separator.
  * @returns {OpItemJsonResult} Parsed JSON payload or a printable error.
  */
 export function readOpItemJson(
@@ -27,16 +28,19 @@ export function readOpItemJson(
   selector: string,
   failureMessage: string,
   invalidPayloadMessage: string,
+  vault?: string,
 ): OpItemJsonResult {
-  const opResult = spawnSync(
-    resolveOpPath(),
-    ["item", "get", "--format", "json", "--", selector],
-    {
-      encoding: "utf8",
-      env: buildTokenChildEnv(token),
-      timeout: resolveOpTimeoutMs(),
-    },
-  );
+  const opArgs = ["item", "get", "--format", "json"];
+  if (vault !== undefined) {
+    opArgs.push("--vault", vault);
+  }
+  opArgs.push("--", selector);
+
+  const opResult = spawnSync(resolveOpPath(), opArgs, {
+    encoding: "utf8",
+    env: buildTokenChildEnv(token),
+    timeout: resolveOpTimeoutMs(),
+  });
   if (opResult.error || opResult.status !== 0) {
     return {
       error: failureMessage,
