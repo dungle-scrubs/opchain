@@ -39,6 +39,7 @@ describe("buildProgram", () => {
 
     expect(program.commands.map((command) => command.name())).toEqual([
       "identity",
+      "item-structure",
       "secrets",
       "expires",
       "token",
@@ -88,6 +89,9 @@ describe("buildProgram", () => {
     );
     expect(helpText).toContain(
       "opchain <identity> secrets <list|check|inspect|validate>",
+    );
+    expect(helpText).toContain(
+      "opchain <identity> item-structure <item> [--vault <vault>]",
     );
     expect(helpText).toContain(
       "opchain <identity> expires <add|remove|list|scan>",

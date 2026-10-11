@@ -7,6 +7,7 @@ import { runExpiresScan } from "../commands/expires-scan.ts";
 import { runDoctor, runIdentityList } from "../commands/identity.ts";
 import { runMigrateV1 } from "../commands/migrate.ts";
 import { runIdentityOp } from "../commands/op.ts";
+import { runItemStructure } from "../commands/item-structure.ts";
 import { runSecretsCheck } from "../commands/secrets-check.ts";
 import { runSecretsInspect } from "../commands/secrets-inspect.ts";
 import { runSecretsList } from "../commands/secrets-list.ts";
@@ -84,6 +85,17 @@ export const CLI_COMMAND_DEFINITIONS: readonly CliCommandDefinition[] = [
       "<identity> [--profile <name>|--read|--write] [--allow-env-token] [--allow-reveal] op <args...>",
     kind: "command",
     name: "op",
+  },
+  {
+    description:
+      "Print an item's field structure (labels, types, value presence and length) without values.",
+    examples: ["opchain human item-structure OpenAI --vault Services"],
+    handler: runItemStructure,
+    identityScoped: true,
+    includeInTopLevel: true,
+    invocation: "<identity> item-structure <item> [--vault <vault>]",
+    kind: "command",
+    name: "item-structure",
   },
   {
     children: [
