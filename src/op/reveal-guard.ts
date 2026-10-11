@@ -279,6 +279,102 @@ const KNOWN_BOOLEAN_FLAGS: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * op management commands whose second path word is a stable subcommand name.
+ */
+const MANAGEMENT_COMMANDS: ReadonlySet<string> = new Set([
+  "account",
+  "connect",
+  "document",
+  "events-api",
+  "group",
+  "item",
+  "plugin",
+  "service-account",
+  "user",
+  "vault",
+]);
+
+/**
+ * `connect` subcommand groups whose third path word is also a subcommand name.
+ */
+const CONNECT_SUBCOMMAND_GROUPS: ReadonlySet<string> = new Set([
+  "token",
+  "server",
+  "group",
+  "vault",
+]);
+
+/** Matches a stable lowercase command word, never a user-supplied value. */
+const COMMAND_WORD_PATTERN = /^[a-z][a-z0-9-]*$/;
+
+/**
+ * Describes one `op` command line for telemetry using only its classified
+ * command path.
+ *
+ * Path words are collected the way cobra looks up commands: value-flag
+ * spellings without `=` consume their next token, `--flag=value` spellings
+ * and known boolean flags consume nothing, and every remaining non-dash
+ * token joins the path. Only lowercase command words are ever returned, so
+ * item names, references, and flag values never reach telemetry.
+ *
+ * @param opArgs - Arguments passed after the `op` token.
+ * @returns {string} Classified command path such as `item get`, or `unknown`.
+ */
+export function describeOpCommand(opArgs: readonly string[]): string {
+  const separatorIndex = opArgs.indexOf("--");
+  const tokens =
+    separatorIndex === -1 ? opArgs : opArgs.slice(0, separatorIndex);
+
+  const pathWords: string[] = [];
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (token === undefined) {
+      continue;
+    }
+
+    if (!token.startsWith("-") || token === "-") {
+      pathWords.push(
+        canonicalizePathToken(token, pathWords.length, pathWords[0]),
+      );
+      continue;
+    }
+
+    if (token.includes("=") || KNOWN_BOOLEAN_FLAGS.has(token)) {
+      continue;
+    }
+
+    index += 1;
+  }
+
+  const firstWord = pathWords[0];
+  if (firstWord === undefined || !COMMAND_WORD_PATTERN.test(firstWord)) {
+    return "unknown";
+  }
+
+  const words = [firstWord];
+  const secondWord = pathWords[1];
+  if (
+    MANAGEMENT_COMMANDS.has(firstWord) &&
+    secondWord !== undefined &&
+    COMMAND_WORD_PATTERN.test(secondWord)
+  ) {
+    words.push(secondWord);
+
+    const thirdWord = pathWords[2];
+    if (
+      firstWord === "connect" &&
+      CONNECT_SUBCOMMAND_GROUPS.has(secondWord) &&
+      thirdWord !== undefined &&
+      COMMAND_WORD_PATTERN.test(thirdWord)
+    ) {
+      words.push(thirdWord);
+    }
+  }
+
+  return words.join(" ");
+}
+
+/**
  * Detects whether one `op` command line prints a secret value to stdout.
  *
  * Pure argv inspection: tokens after the first `--` are ignored, op global

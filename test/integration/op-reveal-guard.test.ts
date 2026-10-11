@@ -488,6 +488,30 @@ describe("op reveal guard", () => {
     });
   });
 
+  describe("command-name telemetry", () => {
+    test("reports only the classified command path, never argument values", () => {
+      const homePath = mkdtempSync(join(tmpdir(), "opchain-reveal-cmd-"));
+      const outFile = join(homePath, "out.txt");
+      const { result } = runOpchainOp([
+        "--debug",
+        "--debug-format",
+        "json",
+        "primary",
+        "--read",
+        "op",
+        "read",
+        "-o",
+        outFile,
+        "op://SentinelVault/SentinelItem/field",
+      ]);
+
+      expect(result.status).toBe(0);
+      expect(result.stderr).toContain('"command_name":"read"');
+      expect(result.stderr).not.toContain("SentinelVault");
+      expect(result.stderr).not.toContain("SentinelItem");
+    });
+  });
+
   describe("--allow-reveal on a TTY", () => {
     test("--allow-reveal is a no-op for non-reveal commands", () => {
       const { opLogPath, result } = runOpchainOp([

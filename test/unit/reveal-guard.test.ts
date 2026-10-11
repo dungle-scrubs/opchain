@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 
-import { detectRevealForm } from "../../src/op/reveal-guard.ts";
+import {
+  describeOpCommand,
+  detectRevealForm,
+} from "../../src/op/reveal-guard.ts";
 
 const CWD = "/tmp/opchain-cwd";
 
@@ -271,6 +274,37 @@ describe("detectRevealForm", () => {
 
     test("non-json formats on item get are not a reveal", () => {
       expect(form(["item", "get", "X", "--format", "csv"])).toBeNull();
+    });
+  });
+
+  describe("describeOpCommand", () => {
+    test("returns the command path without flag or positional values", () => {
+      expect(describeOpCommand(["vault", "list"])).toBe("vault list");
+      expect(
+        describeOpCommand(["item", "edit", "Stripe", "--vault", "Services"]),
+      ).toBe("item edit");
+      expect(describeOpCommand(["read", "op://V/I/f"])).toBe("read");
+      expect(describeOpCommand(["read", "-o", "out.txt", "op://V/I/f"])).toBe(
+        "read",
+      );
+      expect(
+        describeOpCommand(["run", "--env-file", ".env", "--", "cmd"]),
+      ).toBe("run");
+      expect(describeOpCommand(["--account", "a", "items", "get", "X"])).toBe(
+        "item get",
+      );
+      expect(describeOpCommand(["connect", "token", "create", "t"])).toBe(
+        "connect token create",
+      );
+    });
+
+    test("returns unknown or a safe prefix when only values are visible", () => {
+      expect(describeOpCommand(["item", "My Secret"])).toBe("item");
+      expect(describeOpCommand(["--format", "json"])).toBe("unknown");
+      expect(describeOpCommand([])).toBe("unknown");
+      expect(describeOpCommand(["vault", "--foo", "bar", "list"])).toBe(
+        "vault list",
+      );
     });
   });
 

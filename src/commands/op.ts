@@ -1,7 +1,11 @@
 import { spawn } from "node:child_process";
 
 import { createTelemetryEvent } from "../telemetry/event.ts";
-import { detectRevealForm, type RevealForm } from "../op/reveal-guard.ts";
+import {
+  describeOpCommand,
+  detectRevealForm,
+  type RevealForm,
+} from "../op/reveal-guard.ts";
 
 import { buildTokenChildEnv } from "../cli/child-env.ts";
 import type { CommandRequest } from "../cli/command-request.ts";
@@ -221,6 +225,7 @@ export async function runIdentityOp(
     return refusal;
   }
 
+  const commandName = describeOpCommand(opArgs);
   const classification = classifyOpCommand(opArgs);
 
   if (
@@ -248,7 +253,7 @@ export async function runIdentityOp(
           options,
           createTelemetryEvent("op.command.classify", {
             classification: classification ?? "explicit_profile",
-            command_name: opArgs.slice(0, 2).join(" "),
+            command_name: commandName,
             identity: identityName,
           }),
         );
@@ -264,7 +269,7 @@ export async function runIdentityOp(
   writeTelemetry(
     options,
     createTelemetryEvent("op.exec.start", {
-      command_name: opArgs.slice(0, 2).join(" "),
+      command_name: commandName,
       identity: identityName,
       profile: resolvedProfile.profileName,
     }),
@@ -283,7 +288,7 @@ export async function runIdentityOp(
   writeTelemetry(
     options,
     createTelemetryEvent("op.exec.finish", {
-      command_name: opArgs.slice(0, 2).join(" "),
+      command_name: commandName,
       exit_code: opResult.exitCode,
       identity: identityName,
       profile: resolvedProfile.profileName,
