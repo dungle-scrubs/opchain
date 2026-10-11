@@ -1,9 +1,11 @@
 import { spawn } from "node:child_process";
 
 import { createTelemetryEvent } from "../telemetry/event.ts";
+import { detectRevealForm, type RevealForm } from "../op/reveal-guard.ts";
 
 import { buildTokenChildEnv } from "../cli/child-env.ts";
 import type { CommandRequest } from "../cli/command-request.ts";
+import type { CliOptions } from "../cli/options.ts";
 import {
   formatOpTimeoutMessage,
   resolveOpTimeoutMs,
@@ -122,6 +124,83 @@ function runOpChild(
 }
 
 /**
+ * Renders the refusal message for one reveal form.
+ *
+ * The message names the safe alternative and never echoes argument values
+ * from the refused command line.
+ *
+ * @param revealForm - Refused reveal form.
+ * @returns {string} Printable refusal message.
+ */
+function formatRevealRefusal(revealForm: RevealForm): string {
+  const headline =
+    revealForm.form === "unclassifiable-order"
+      ? "Refused: opchain cannot tell whether this op command prints secret values."
+      : `Refused: this op command prints secret values (${revealForm.form}).`;
+
+  return `${headline} ${revealForm.alternative}\nTo run it anyway from an interactive terminal, pass --allow-reveal before \`op\`.\n`;
+}
+
+/**
+ * Applies the reveal guard to one `op` invocation.
+ *
+ * Runs before profile classification, config loading, token resolution, and
+ * spawning, so a refused command resolves no token and starts no child. With
+ * `--allow-reveal` the command still requires an interactive stdin; stdout may
+ * stay piped.
+ *
+ * @param identityName - Selected identity name.
+ * @param options - Parsed CLI options.
+ * @param opArgs - Arguments passed after the `op` token.
+ * @returns {CommandResult | null} Refusal result or null to continue.
+ */
+function applyRevealGuard(
+  identityName: string,
+  options: CliOptions,
+  opArgs: readonly string[],
+): CommandResult | null {
+  const revealForm = detectRevealForm(opArgs, process.cwd());
+  if (revealForm === null) {
+    return null;
+  }
+
+  if (!options.allowReveal) {
+    writeTelemetry(
+      options,
+      createTelemetryEvent("op.reveal.refused", {
+        form: revealForm.form,
+        identity: identityName,
+        reason: "reveal",
+      }),
+    );
+    return commandFailure(formatRevealRefusal(revealForm));
+  }
+
+  if (process.stdin.isTTY !== true) {
+    writeTelemetry(
+      options,
+      createTelemetryEvent("op.reveal.refused", {
+        form: revealForm.form,
+        identity: identityName,
+        reason: "no_tty",
+      }),
+    );
+    return commandFailure(
+      "--allow-reveal requires an interactive terminal (stdin is not a TTY).\n",
+    );
+  }
+
+  writeTelemetry(
+    options,
+    createTelemetryEvent("op.reveal.allowed", {
+      form: revealForm.form,
+      identity: identityName,
+    }),
+  );
+  return null;
+}
+
+/**
  * Handles `opchain <identity> op ...` for the current read-safe slice.
  *
  * @param options - Parsed CLI options.
@@ -136,6 +215,12 @@ export async function runIdentityOp(
 
   const { identityName, options } = request;
   const opArgs = request.trailingArgs;
+
+  const refusal = applyRevealGuard(identityName, options, opArgs);
+  if (refusal !== null) {
+    return refusal;
+  }
+
   const classification = classifyOpCommand(opArgs);
 
   if (
