@@ -20,6 +20,7 @@ function createCliOptions(): CliOptions {
   return {
     accessOverride: undefined,
     allowEnvToken: false,
+    allowReveal: false,
     commandArgs: ["migrate-v1", "--dry-run"],
     debug: false,
     debugFormat: "text",

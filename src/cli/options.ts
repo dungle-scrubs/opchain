@@ -3,7 +3,12 @@ import { parseFlagArguments } from "./flag-args.ts";
 const DEBUG_FORMATS = ["json", "text"] as const;
 const ROOT_BOOLEAN_FLAGS = new Set(["--debug", "--help", "-h"]);
 const ROOT_VALUE_FLAGS = new Set(["--debug-format"]);
-const OP_BOOLEAN_FLAGS = new Set(["--read", "--write", "--allow-env-token"]);
+const OP_BOOLEAN_FLAGS = new Set([
+  "--read",
+  "--write",
+  "--allow-env-token",
+  "--allow-reveal",
+]);
 const OP_VALUE_FLAGS = new Set(["--profile"]);
 
 export type DebugFormat = (typeof DEBUG_FORMATS)[number];
@@ -13,6 +18,7 @@ export type AccessOverride = "read" | "write";
 export type CliOptions = {
   readonly accessOverride: AccessOverride | undefined;
   readonly allowEnvToken: boolean;
+  readonly allowReveal: boolean;
   readonly commandArgs: readonly string[];
   readonly debug: boolean;
   readonly debugFormat: DebugFormat;
@@ -24,6 +30,7 @@ export type CliOptions = {
 type ParsedIdentityOpCommand = {
   readonly accessOverride: AccessOverride | undefined;
   readonly allowEnvToken: boolean;
+  readonly allowReveal: boolean;
   readonly commandArgs: readonly string[];
   readonly explicitProfile: string | undefined;
   readonly parseError?: string;
@@ -61,6 +68,7 @@ function buildIdentityOpCandidate(
     return {
       accessOverride: undefined,
       allowEnvToken: false,
+      allowReveal: false,
       commandArgs: [identity, "op", ...opArgs],
       explicitProfile: undefined,
       parseError: parsedFlags.error.message,
@@ -78,6 +86,7 @@ function buildIdentityOpCandidate(
     return {
       accessOverride: undefined,
       allowEnvToken: parsedFlags.booleanFlags.has("--allow-env-token"),
+      allowReveal: parsedFlags.booleanFlags.has("--allow-reveal"),
       commandArgs: [identity, "op", ...opArgs],
       explicitProfile: parsedFlags.valueFlags.get("--profile"),
       parseError: "Cannot pass both --read and --write.",
@@ -91,6 +100,7 @@ function buildIdentityOpCandidate(
         ? "read"
         : undefined,
     allowEnvToken: parsedFlags.booleanFlags.has("--allow-env-token"),
+    allowReveal: parsedFlags.booleanFlags.has("--allow-reveal"),
     commandArgs: [identity, "op", ...opArgs],
     explicitProfile: parsedFlags.valueFlags.get("--profile"),
   };
@@ -195,6 +205,7 @@ export function parseCliOptions(argv: readonly string[]): CliOptions {
     return {
       accessOverride: undefined,
       allowEnvToken: false,
+      allowReveal: false,
       commandArgs: [],
       debug: false,
       debugFormat: "text",
@@ -214,6 +225,7 @@ export function parseCliOptions(argv: readonly string[]): CliOptions {
   return {
     accessOverride: parsedIdentityOpCommand?.accessOverride,
     allowEnvToken: parsedIdentityOpCommand?.allowEnvToken ?? false,
+    allowReveal: parsedIdentityOpCommand?.allowReveal ?? false,
     commandArgs: parsedIdentityOpCommand?.commandArgs ?? commandTokens,
     debug: parsedRootFlags.booleanFlags.has("--debug"),
     debugFormat: normalizeDebugFormat(

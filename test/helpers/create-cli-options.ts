@@ -12,6 +12,7 @@ export function createCliOptions(
   return {
     accessOverride: undefined,
     allowEnvToken: false,
+    allowReveal: false,
     commandArgs: [],
     debug: false,
     debugFormat: "text",

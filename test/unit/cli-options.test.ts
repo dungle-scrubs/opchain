@@ -9,6 +9,7 @@ describe("parseCliOptions", () => {
     expect(result).toEqual({
       accessOverride: undefined,
       allowEnvToken: false,
+      allowReveal: false,
       commandArgs: [],
       debug: false,
       debugFormat: "text",
@@ -29,9 +30,54 @@ describe("parseCliOptions", () => {
     expect(result).toEqual({
       accessOverride: undefined,
       allowEnvToken: false,
+      allowReveal: false,
       commandArgs: ["identity", "list"],
       debug: true,
       debugFormat: "json",
+      explicitProfile: undefined,
+      help: false,
+    });
+  });
+
+  test("parses --allow-reveal before the identity as an op-execution flag", () => {
+    const result = parseCliOptions([
+      "--allow-reveal",
+      "human",
+      "op",
+      "vault",
+      "list",
+    ]);
+
+    expect(result).toEqual({
+      accessOverride: undefined,
+      allowEnvToken: false,
+      allowReveal: true,
+      commandArgs: ["human", "op", "vault", "list"],
+      debug: false,
+      debugFormat: "text",
+      explicitProfile: undefined,
+      help: false,
+    });
+  });
+
+  test("parses --allow-reveal between identity and op as an op-execution flag", () => {
+    const result = parseCliOptions([
+      "--debug",
+      "human",
+      "--allow-reveal",
+      "--read",
+      "op",
+      "vault",
+      "list",
+    ]);
+
+    expect(result).toEqual({
+      accessOverride: "read",
+      allowEnvToken: false,
+      allowReveal: true,
+      commandArgs: ["human", "op", "vault", "list"],
+      debug: true,
+      debugFormat: "text",
       explicitProfile: undefined,
       help: false,
     });
@@ -52,6 +98,7 @@ describe("parseCliOptions", () => {
     expect(result).toEqual({
       accessOverride: "write",
       allowEnvToken: true,
+      allowReveal: false,
       commandArgs: ["human", "op", "vault", "list"],
       debug: false,
       debugFormat: "text",
@@ -75,6 +122,7 @@ describe("parseCliOptions", () => {
     expect(result).toEqual({
       accessOverride: "write",
       allowEnvToken: true,
+      allowReveal: false,
       commandArgs: ["human", "op", "vault", "list"],
       debug: false,
       debugFormat: "text",
@@ -95,6 +143,7 @@ describe("parseCliOptions", () => {
     expect(result).toEqual({
       accessOverride: undefined,
       allowEnvToken: false,
+      allowReveal: false,
       commandArgs: ["human", "op", "read", "--debug", "secret"],
       debug: false,
       debugFormat: "text",
@@ -109,6 +158,7 @@ describe("parseCliOptions", () => {
     expect(result).toEqual({
       accessOverride: undefined,
       allowEnvToken: false,
+      allowReveal: false,
       commandArgs: ["human", "op", "item", "get", "--help"],
       debug: false,
       debugFormat: "text",
@@ -130,6 +180,7 @@ describe("parseCliOptions", () => {
     expect(result).toEqual({
       accessOverride: undefined,
       allowEnvToken: false,
+      allowReveal: false,
       commandArgs: ["human", "op", "read", "--debug-format", "json", "secret"],
       debug: false,
       debugFormat: "text",
@@ -144,6 +195,7 @@ describe("parseCliOptions", () => {
     expect(result).toEqual({
       accessOverride: undefined,
       allowEnvToken: false,
+      allowReveal: false,
       commandArgs: ["token", "set", "--profile", "writer"],
       debug: false,
       debugFormat: "text",
@@ -165,6 +217,7 @@ describe("parseCliOptions", () => {
     expect(result).toEqual({
       accessOverride: undefined,
       allowEnvToken: false,
+      allowReveal: false,
       commandArgs: ["human", "unexpected", "--write", "op", "vault", "list"],
       debug: false,
       debugFormat: "text",
@@ -193,6 +246,7 @@ describe("parseCliOptions", () => {
     expect(result).toEqual({
       accessOverride: undefined,
       allowEnvToken: false,
+      allowReveal: false,
       commandArgs: ["human", "op", "vault", "list"],
       debug: false,
       debugFormat: "text",
@@ -221,6 +275,7 @@ describe("parseCliOptions", () => {
     expect(result).toEqual({
       accessOverride: undefined,
       allowEnvToken: false,
+      allowReveal: false,
       commandArgs: ["human", "op", "vault", "list"],
       debug: false,
       debugFormat: "text",

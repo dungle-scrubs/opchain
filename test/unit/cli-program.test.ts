@@ -80,9 +80,12 @@ describe("buildProgram", () => {
     const helpText = buildProgram().helpInformation();
 
     expect(helpText).toContain(
-      "<identity> [--profile <name>|--read|--write] [--allow-env-token] op <args...>",
+      "<identity> [--profile <name>|--read|--write] [--allow-env-token] [--allow-reveal] op <args...>",
     );
     expect(helpText).toContain("Identity-scoped commands:");
+    expect(helpText).toContain(
+      "--allow-reveal    Run an op command that prints secret values (interactive terminal only).",
+    );
     expect(helpText).toContain(
       "opchain <identity> secrets <list|check|inspect|validate>",
     );

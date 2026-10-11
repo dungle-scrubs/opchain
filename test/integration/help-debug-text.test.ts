@@ -9,7 +9,7 @@ describe("CLI help debug text", () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("Usage:");
     expect(result.stdout).toContain(
-      "<identity> [--profile <name>|--read|--write] [--allow-env-token] op <args...>",
+      "<identity> [--profile <name>|--read|--write] [--allow-env-token] [--allow-reveal] op <args...>",
     );
     expect(result.stdout).toContain("Identity-scoped commands:");
     expect(result.stdout).toContain("opchain human op vault list");
