@@ -91,6 +91,119 @@ function parseTelemetryEvents(
     );
 }
 
+type RefusalFormRow = {
+  readonly form: string;
+  readonly opArgs: readonly string[];
+  readonly profileFlag: string;
+};
+
+const REFUSAL_FORM_ROWS: readonly RefusalFormRow[] = [
+  {
+    form: "read-stdout",
+    opArgs: ["read", "op://SentinelVault/SentinelItem/field"],
+    profileFlag: "--read",
+  },
+  {
+    form: "inject-stdout",
+    opArgs: ["inject", "-i", "template.tpl"],
+    profileFlag: "--read",
+  },
+  {
+    form: "document-get-stdout",
+    opArgs: ["document", "get", "SentinelDoc"],
+    profileFlag: "--read",
+  },
+  {
+    form: "item-get-reveal",
+    opArgs: ["item", "get", "SentinelItem", "--reveal"],
+    profileFlag: "--read",
+  },
+  {
+    form: "item-get-reveal",
+    opArgs: ["item", "get", "SentinelItem", "--otp"],
+    profileFlag: "--read",
+  },
+  {
+    form: "item-get-reveal",
+    opArgs: ["item", "get", "SentinelItem", "--format", "json"],
+    profileFlag: "--read",
+  },
+  {
+    form: "item-write-reveal",
+    opArgs: ["item", "create", "--title", "SentinelItem", "--reveal"],
+    profileFlag: "--write",
+  },
+  {
+    form: "item-write-reveal",
+    opArgs: ["item", "edit", "SentinelItem", "--format", "json"],
+    profileFlag: "--write",
+  },
+  {
+    form: "run-no-masking",
+    opArgs: ["run", "--no-masking", "--", "printenv"],
+    profileFlag: "--read",
+  },
+  {
+    form: "signin",
+    opArgs: ["signin", "--raw"],
+    profileFlag: "--read",
+  },
+  {
+    form: "token-create",
+    opArgs: ["service-account", "create", "SentinelSA"],
+    profileFlag: "--write",
+  },
+  {
+    form: "token-create",
+    opArgs: ["connect", "token", "create", "SentinelToken"],
+    profileFlag: "--write",
+  },
+  {
+    form: "token-create",
+    opArgs: ["events-api", "create", "SentinelEvents"],
+    profileFlag: "--write",
+  },
+  {
+    form: "unclassifiable-order",
+    opArgs: ["item", "--vault", "SentinelVault", "get", "SentinelItem"],
+    profileFlag: "--read",
+  },
+];
+
+/**
+ * Labels one table row for test names.
+ *
+ * @param row - Refusal form row.
+ * @returns {string} Human-readable row label.
+ */
+function rowLabel(row: RefusalFormRow): string {
+  return `${row.form}: op ${row.opArgs.join(" ")}`;
+}
+
+/**
+ * Builds the expected refusal headline for one form.
+ *
+ * @param form - Stable form id.
+ * @returns {string} Refusal headline.
+ */
+function refusalHeadline(form: string): string {
+  return form === "unclassifiable-order"
+    ? "Refused: opchain cannot tell whether this op command prints secret values."
+    : `Refused: this op command prints secret values (${form}).`;
+}
+
+/**
+ * Asserts no whitespace-separated stderr token leaks a Sentinel argument value.
+ *
+ * @param stderr - Raw stderr output.
+ * @returns {void} Nothing.
+ */
+function expectNoSentinelValue(stderr: string): void {
+  for (const token of stderr.split(/\s+/)) {
+    expect(token.startsWith("Sentinel")).toBe(false);
+  }
+}
+
 describe("op reveal guard", () => {
   describe("refused forms", () => {
     test("refuses op read to stdout", () => {
@@ -263,75 +376,63 @@ describe("op reveal guard", () => {
   });
 
   describe("opchain flag positions on refusals", () => {
-    test("refuses with --read before the identity", () => {
-      expectRefused(
-        [
-          "--read",
-          "primary",
-          "op",
-          "read",
-          "op://SentinelVault/SentinelItem/field",
-        ],
-        "Refused: this op command prints secret values (read-stdout).",
-      );
-    });
+    for (const row of REFUSAL_FORM_ROWS) {
+      test(`refuses ${rowLabel(row)} in every accepted flag position`, () => {
+        const positions: readonly (readonly string[])[] = [
+          [row.profileFlag, "primary", "op", ...row.opArgs],
+          ["primary", row.profileFlag, "op", ...row.opArgs],
+          ["--debug", "primary", row.profileFlag, "op", ...row.opArgs],
+        ];
 
-    test("refuses with --write between identity and op", () => {
-      expectRefused(
-        [
-          "primary",
-          "--write",
-          "op",
-          "read",
-          "op://SentinelVault/SentinelItem/field",
-        ],
-        "Refused: this op command prints secret values (read-stdout).",
-      );
-    });
+        for (const [index, argv] of positions.entries()) {
+          const { opLogPath, result, securityLogPath } = runOpchainOp(argv);
 
-    test("refuses with root --debug first", () => {
-      const { result } = runOpchainOp([
-        "--debug",
-        "--read",
-        "primary",
-        "op",
-        "read",
-        "op://SentinelVault/SentinelItem/field",
-      ]);
+          expect(result.status).toBe(1);
+          expect(result.stdout).toBe("");
+          expect(result.stderr).toContain(refusalHeadline(row.form));
+          expectNoSentinelValue(result.stderr);
+          expect(existsSync(opLogPath)).toBe(false);
+          expect(existsSync(securityLogPath)).toBe(false);
 
-      expect(result.status).toBe(1);
-      expect(result.stderr).toContain(
-        "Refused: this op command prints secret values (read-stdout).",
-      );
-      expect(result.stderr).toContain("op.reveal.refused");
-    });
+          // Plain positions emit no telemetry, so the refusal is the first
+          // thing on stderr; the --debug position carries telemetry first.
+          if (index < 2) {
+            expect(result.stderr.startsWith("Refused:")).toBe(true);
+          }
+        }
+      });
+    }
   });
 
   describe("--allow-reveal without a TTY", () => {
-    test("refuses with the no-TTY message and runs nothing in every flag position", () => {
-      for (const argv of [
-        ["--allow-reveal", "primary", "op", "read", "op://Vault/Item/field"],
-        ["primary", "--allow-reveal", "op", "read", "op://Vault/Item/field"],
-        [
-          "--debug",
-          "--allow-reveal",
-          "primary",
-          "op",
-          "read",
-          "op://Vault/Item/field",
-        ],
-      ]) {
-        const { opLogPath, result, securityLogPath } = runOpchainOp(argv);
+    for (const row of REFUSAL_FORM_ROWS) {
+      test(`refuses ${rowLabel(row)} with the no-TTY message in every accepted flag position`, () => {
+        const positions: readonly (readonly string[])[] = [
+          ["--allow-reveal", row.profileFlag, "primary", "op", ...row.opArgs],
+          ["primary", "--allow-reveal", row.profileFlag, "op", ...row.opArgs],
+          [
+            "--debug",
+            "--allow-reveal",
+            "primary",
+            row.profileFlag,
+            "op",
+            ...row.opArgs,
+          ],
+        ];
 
-        expect(result.status).toBe(1);
-        expect(result.stdout).toBe("");
-        expect(result.stderr).toContain(
-          "--allow-reveal requires an interactive terminal (stdin is not a TTY).",
-        );
-        expect(existsSync(opLogPath)).toBe(false);
-        expect(existsSync(securityLogPath)).toBe(false);
-      }
-    });
+        for (const argv of positions) {
+          const { opLogPath, result, securityLogPath } = runOpchainOp(argv);
+
+          expect(result.status).toBe(1);
+          expect(result.stdout).toBe("");
+          expect(result.stderr).toContain(
+            "--allow-reveal requires an interactive terminal (stdin is not a TTY).",
+          );
+          expect(existsSync(opLogPath)).toBe(false);
+          expect(existsSync(securityLogPath)).toBe(false);
+        }
+      });
+    }
 
     test("emits no_tty refusal telemetry with debug JSON", () => {
       const { result } = runOpchainOp([
@@ -403,7 +504,54 @@ describe("op reveal guard", () => {
       expect(readFileSync(opLogPath, "utf8")).toContain("args=vault list");
     });
 
-    test("runs the refused-shape command with unchanged arguments", () => {
+    for (const row of REFUSAL_FORM_ROWS) {
+      if (row.form === "unclassifiable-order") {
+        continue;
+      }
+
+      test(`runs ${rowLabel(row)} with unchanged arguments`, () => {
+        const homePath = mkdtempSync(join(tmpdir(), "opchain-reveal-tty-"));
+        writeAutoReadWriteConfig(homePath);
+        const opLogPath = join(homePath, "op.log");
+        const securityLogPath = join(homePath, "security.log");
+        const profileMode = row.profileFlag === "--write" ? "write" : "read";
+
+        const expectScript = [
+          "log_user 1",
+          "set timeout 15",
+          `spawn $env(BUN_BIN) run src/index.ts primary ${row.profileFlag} --allow-reveal op ${row.opArgs.join(" ")}`,
+          "expect eof",
+        ].join("\n");
+
+        const result = spawnSync("expect", ["-c", expectScript], {
+          cwd: process.cwd(),
+          encoding: "utf8",
+          env: {
+            ...process.env,
+            BUN_BIN: process.execPath,
+            HOME: homePath,
+            OPCHAIN_OP_PATH: OP_FIXTURE_PATH,
+            OPCHAIN_SECURITY_PATH: SECURITY_FIXTURE_PATH,
+            OPCHAIN_TEST_OP_LOG: opLogPath,
+            OPCHAIN_TEST_SECURITY_TOKEN_LOG: securityLogPath,
+            OPCHAIN_TEST_SECURITY_TOKEN: "token-for-primary-read",
+            OPCHAIN_TEST_OP_PASSTHROUGH: "1",
+          },
+        });
+
+        expect(result.status).toBe(0);
+        const opLog = readFileSync(opLogPath, "utf8");
+        expect(opLog.split("\n")[0]).toBe(`args=${row.opArgs.join(" ")}`);
+        expect(opLog).toBe(
+          `args=${row.opArgs.join(" ")}\ntoken=token-for-primary-read\n`,
+        );
+        expect(readFileSync(securityLogPath, "utf8")).toBe(
+          `service=opchain\naccount=opchain:primary:${profileMode}\n`,
+        );
+      });
+    }
+
+    test("emits op.reveal.allowed telemetry for an allow-reveal run", () => {
       const homePath = mkdtempSync(join(tmpdir(), "opchain-reveal-tty-"));
       writeAutoReadWriteConfig(homePath);
       const opLogPath = join(homePath, "op.log");

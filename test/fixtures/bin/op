@@ -85,5 +85,10 @@ if [[ "$1" == "item" && "$2" == "get" ]]; then
   exit 0
 fi
 
+if [[ "${OPCHAIN_TEST_OP_PASSTHROUGH:-}" == "1" ]]; then
+  printf 'passthrough ok\n'
+  exit 0
+fi
+
 printf 'unsupported fake op command\n' >&2
 exit 1
