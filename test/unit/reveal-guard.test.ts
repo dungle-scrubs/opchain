@@ -171,6 +171,18 @@ describe("detectRevealForm", () => {
       expect(form(["read", "--help", "ref"])).toBeNull();
       expect(form(["item", "get", "X", "--format", "json", "-h"])).toBeNull();
     });
+
+    test("--help=<value> and -h=<value> never trigger the help exemption", () => {
+      expect(form(["item", "get", "X", "--reveal", "--help=false"])).toBe(
+        "item-get-reveal",
+      );
+      expect(form(["item", "get", "X", "--reveal", "-h=false"])).toBe(
+        "item-get-reveal",
+      );
+      expect(form(["item", "get", "X", "--reveal", "--help=true"])).toBe(
+        "item-get-reveal",
+      );
+    });
   });
 
   describe("unclassifiable ordering", () => {

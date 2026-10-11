@@ -302,7 +302,7 @@ export function detectRevealForm(
         continue;
       }
 
-      if (globalFlag.name === "--help" || globalFlag.name === "-h") {
+      if (token === "--help" || token === "-h") {
         helpRequested = true;
       }
       continue;
