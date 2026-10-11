@@ -248,6 +248,37 @@ function isValidOutFile(value: string | undefined, cwd: string): boolean {
 }
 
 /**
+ * op boolean flags, global and per-command, that never consume the next
+ * token regardless of spelling position. Any other dash flag written
+ * without `=` is treated as a value flag that could swallow a following
+ * `--` separator.
+ */
+const KNOWN_BOOLEAN_FLAGS: ReadonlySet<string> = new Set([
+  "--cache",
+  "--debug",
+  "--iso-timestamps",
+  "--no-color",
+  "-h",
+  "--help",
+  "-v",
+  "--version",
+  "-f",
+  "--force",
+  "-n",
+  "--no-newline",
+  "--no-masking",
+  "--reveal",
+  "--otp",
+  "--include-archive",
+  "--share-link",
+  "--dry-run",
+  "--favorite",
+  "--raw",
+  "--can-create-vaults",
+  "--generate-password",
+]);
+
+/**
  * Detects whether one `op` command line prints a secret value to stdout.
  *
  * Pure argv inspection: tokens after the first `--` are ignored, op global
@@ -265,6 +296,20 @@ export function detectRevealForm(
   cwd: string,
 ): RevealForm | null {
   const separatorIndex = opArgs.indexOf("--");
+
+  // pflag hands a value flag written `--flag value` the next token even when
+  // that token is `--`, so such a separator never reaches op. When the token
+  // right before it is a dash flag that could be a value flag, fail closed.
+  const tokenBeforeSeparator =
+    separatorIndex > 0 ? opArgs[separatorIndex - 1] : undefined;
+  if (
+    tokenBeforeSeparator?.startsWith("-") &&
+    !tokenBeforeSeparator.includes("=") &&
+    !KNOWN_BOOLEAN_FLAGS.has(tokenBeforeSeparator)
+  ) {
+    return revealFormOf("unclassifiable-order");
+  }
+
   const tokens =
     separatorIndex === -1 ? opArgs : opArgs.slice(0, separatorIndex);
 

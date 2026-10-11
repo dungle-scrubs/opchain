@@ -127,6 +127,34 @@ describe("detectRevealForm", () => {
     });
   });
 
+  describe("value flag before the -- separator", () => {
+    test("refuses a value-flag spelling whose value would swallow the separator", () => {
+      expect(form(["item", "get", "X", "--vault", "--", "--reveal"])).toBe(
+        "unclassifiable-order",
+      );
+      expect(
+        form(["run", "--env-file", "--", "--no-masking", "--", "cmd"]),
+      ).toBe("unclassifiable-order");
+      expect(form(["--account", "--", "item", "get", "X", "--reveal"])).toBe(
+        "unclassifiable-order",
+      );
+      expect(form(["read", "-fn", "--", "op://Vault/Item/field"])).toBe(
+        "unclassifiable-order",
+      );
+    });
+
+    test("keeps allowing separator uses no flag value can swallow", () => {
+      expect(form(["run", "--env-file", ".env", "--", "cmd"])).toBeNull();
+      expect(form(["run", "--", "cmd"])).toBeNull();
+      expect(
+        form(["read", "-o", "f", "--", "op://Vault/Item/field"]),
+      ).toBeNull();
+      expect(
+        form(["read", "-n", "-o", "f", "--", "op://Vault/Item/field"]),
+      ).toBeNull();
+    });
+  });
+
   describe("out-file rules", () => {
     test("allows op read and op inject with a file out-file", () => {
       expect(form(["read", "-o", "f", "ref"])).toBeNull();

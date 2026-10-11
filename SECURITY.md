@@ -92,6 +92,10 @@ resolution, config loading, or child spawn:
   `op events-api create`
 - any unknown dash token while the command path is still a prefix of one of
   the forms above (`unclassifiable-order`), which fails closed
+- a `--` separator directly preceded by a dash flag that is not a known
+  boolean flag (`unclassifiable-order`), because op hands a value flag the
+  next token even when that token is `--`, so the separator never reaches
+  op and the tokens after it are still parsed as flags
 
 The only override is `--allow-reveal`, accepted before the identity or
 between the identity and `op`. It additionally requires an interactive
