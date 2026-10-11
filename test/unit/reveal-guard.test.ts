@@ -156,6 +156,12 @@ describe("detectRevealForm", () => {
         form(["read", "-n", "-o", "f", "--", "op://Vault/Item/field"]),
       ).toBeNull();
     });
+
+    test("a boolean marker directly before the separator is still a marker", () => {
+      expect(form(["item", "get", "X", "--reveal", "--"])).toBe(
+        "item-get-reveal",
+      );
+    });
   });
 
   describe("out-file rules", () => {
@@ -305,6 +311,8 @@ describe("detectRevealForm", () => {
       expect(describeOpCommand(["vault", "--foo", "bar", "list"])).toBe(
         "vault list",
       );
+      expect(describeOpCommand(["run", "npm", "start"])).toBe("run");
+      expect(describeOpCommand(["run", "--", "npm", "start"])).toBe("run");
     });
   });
 

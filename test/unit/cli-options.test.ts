@@ -106,6 +106,22 @@ describe("parseCliOptions", () => {
     });
   });
 
+  test("keeps a leading --profile value attached when flags surround the identity", () => {
+    const result = parseCliOptions([
+      "--profile",
+      "p",
+      "primary",
+      "--read",
+      "op",
+      "vault",
+      "list",
+    ]);
+
+    expect(result.accessOverride).toBe("read");
+    expect(result.commandArgs).toEqual(["primary", "op", "vault", "list"]);
+    expect(result.explicitProfile).toBe("p");
+  });
+
   test("extracts op-specific overrides only before the op token", () => {
     const result = parseCliOptions([
       "--profile",
