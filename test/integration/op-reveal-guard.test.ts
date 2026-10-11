@@ -413,8 +413,8 @@ describe("op reveal guard", () => {
           [
             "--debug",
             "--allow-reveal",
-            "primary",
             row.profileFlag,
+            "primary",
             "op",
             ...row.opArgs,
           ],

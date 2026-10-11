@@ -107,30 +107,10 @@ function buildIdentityOpCandidate(
 }
 
 /**
- * Lists candidate identity positions inside one op-command prefix.
- *
- * The documented identity-first and flags-before-identity shapes keep
- * priority; inner positions follow right to left so a value flag near the
- * front keeps its value and the rightmost non-flag token is preferred as the
- * identity when flags surround it.
- *
- * @param tokenCount - Number of prefix tokens before the `op` marker.
- * @returns {readonly number[]} Candidate identity indexes, best first.
- */
-function identityCandidateIndices(tokenCount: number): readonly number[] {
-  const candidates = [0, tokenCount - 1];
-  for (let index = tokenCount - 2; index > 0; index -= 1) {
-    candidates.push(index);
-  }
-  return [...new Set(candidates)];
-}
-
-/**
  * Parses one identity-scoped `op` envelope only when the prefix shape is valid.
  *
- * Valid shapes are the documented identity-first form, the existing
- * compatibility form where flags appear before the identity, and the form
- * where op-execution flags surround the identity on both sides.
+ * Valid shapes are the documented identity-first form and the existing
+ * compatibility form where flags appear before the identity.
  *
  * @param commandArgs - Positional command tokens after root flag stripping.
  * @returns {ParsedIdentityOpCommand | null} Parsed `op` command or null when the envelope is invalid.
@@ -145,7 +125,7 @@ function parseIdentityOpCommand(
 
   const prefixTokens = commandArgs.slice(0, opIndex);
   const opArgs = commandArgs.slice(opIndex + 1);
-  const candidateIndices = identityCandidateIndices(prefixTokens.length);
+  const candidateIndices = [...new Set([0, prefixTokens.length - 1])];
 
   for (const identityIndex of candidateIndices) {
     const parsedCandidate = buildIdentityOpCandidate(

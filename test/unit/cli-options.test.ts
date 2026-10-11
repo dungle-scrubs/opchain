@@ -83,45 +83,6 @@ describe("parseCliOptions", () => {
     });
   });
 
-  test("parses op-execution flags on both sides of the identity", () => {
-    const result = parseCliOptions([
-      "--debug",
-      "--allow-reveal",
-      "primary",
-      "--read",
-      "op",
-      "vault",
-      "list",
-    ]);
-
-    expect(result).toEqual({
-      accessOverride: "read",
-      allowEnvToken: false,
-      allowReveal: true,
-      commandArgs: ["primary", "op", "vault", "list"],
-      debug: true,
-      debugFormat: "text",
-      explicitProfile: undefined,
-      help: false,
-    });
-  });
-
-  test("keeps a leading --profile value attached when flags surround the identity", () => {
-    const result = parseCliOptions([
-      "--profile",
-      "p",
-      "primary",
-      "--read",
-      "op",
-      "vault",
-      "list",
-    ]);
-
-    expect(result.accessOverride).toBe("read");
-    expect(result.commandArgs).toEqual(["primary", "op", "vault", "list"]);
-    expect(result.explicitProfile).toBe("p");
-  });
-
   test("extracts op-specific overrides only before the op token", () => {
     const result = parseCliOptions([
       "--profile",
