@@ -12,6 +12,16 @@ const OP_BOOLEAN_FLAGS = new Set([
 ]);
 const OP_VALUE_FLAGS = new Set(["--profile"]);
 
+/**
+ * Every op-execution flag name, for messages that name a misplaced flag.
+ *
+ * These flags apply only to `op` commands; other commands reject them.
+ */
+export const OP_EXECUTION_FLAGS: readonly string[] = [
+  ...OP_VALUE_FLAGS,
+  ...OP_BOOLEAN_FLAGS,
+];
+
 export type DebugFormat = (typeof DEBUG_FORMATS)[number];
 
 export type AccessOverride = "read" | "write";
