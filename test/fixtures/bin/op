@@ -41,6 +41,30 @@ if [[ "${1:-}" == "inject" ]]; then
   exit 0
 fi
 
+if [[ "${OPCHAIN_TEST_OP_RUN_EXEC:-}" == "1" ]]; then
+  has_run=0
+  for arg in "$@"; do
+    if [[ "$arg" == "run" ]]; then
+      has_run=1
+      break
+    fi
+  done
+  if [[ "$has_run" == "1" ]]; then
+    while (( $# > 0 )); do
+      if [[ "$1" == "--" ]]; then
+        shift
+        if (( $# > 0 )); then
+          exec "$@"
+        fi
+        break
+      fi
+      shift
+    done
+    printf 'fake op run: missing command\n' >&2
+    exit 2
+  fi
+fi
+
 if [[ "${1:-}" == "run" ]]; then
   printf 'run ok\n'
   exit 0
