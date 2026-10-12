@@ -265,6 +265,27 @@ itself.
 Read [SECURITY.md](SECURITY.md) for the threat model, provider environment
 sanitization, telemetry rules, and state-file guarantees.
 
+### Limiting what an agent can reach
+
+The reveal guard keeps an agent from printing a secret by accident. It does
+not stop an agent that sets out to read one. A process running as your macOS
+user can fake a terminal to pass `--allow-reveal`, call `op` from inside
+`op run`, or run the same `/usr/bin/security` lookup opchain uses to read a
+stored token. [SECURITY.md](SECURITY.md) lists these limits.
+
+What an agent can reach is set by the service-account tokens it can use.
+Scoping those tokens is up to you; opchain cannot do it for you.
+Recommended:
+
+- Give agents their own identity, backed by a service account with access
+  only to the vaults they need.
+- Keep any secret that no agent should see in a vault that no agent's service
+  account can access.
+- Check what a token actually reaches with `opchain <identity> op vault list`.
+  The `vaults` list in `config.toml` records your intent, but opchain does not
+  enforce it, even with `enforce_vault_allowlist = true`. It cannot stop a
+  token from reading a vault outside the list.
+
 ## Installing from source
 
 Requirements: [Bun](https://bun.sh) 1.3+.
