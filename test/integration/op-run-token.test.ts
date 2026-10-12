@@ -8,7 +8,10 @@ import { writeAutoReadWriteConfig } from "../helpers/write-opchain-config.ts";
 
 const PRINT_TOKEN = `printf "%s" "\${OP_SERVICE_ACCOUNT_TOKEN:-absent}"`;
 
-function runOpchainOp(argv: readonly string[]) {
+function runOpchainOp(
+  argv: readonly string[],
+  extraEnv: Record<string, string> = {},
+) {
   const homePath = mkdtempSync(join(tmpdir(), "opchain-run-token-"));
   writeAutoReadWriteConfig(homePath);
   const opLogPath = join(homePath, "op.log");
@@ -25,12 +28,64 @@ function runOpchainOp(argv: readonly string[]) {
       OPCHAIN_TEST_OP_LOG: opLogPath,
       OPCHAIN_TEST_SECURITY_TOKEN_LOG: securityLogPath,
       OPCHAIN_TEST_OP_RUN_EXEC: "1",
+      ...extraEnv,
     },
   });
   return { result, opLogPath, securityLogPath };
 }
 
 describe("op run token environment", () => {
+  test("op run passes the caller's environment to the program except OP_ and OPCHAIN_ variables", () => {
+    const { result } = runOpchainOp(
+      [
+        "primary",
+        "--read",
+        "op",
+        "run",
+        "--",
+        "sh",
+        "-c",
+        `printf "%s|%s|%s" "\${MY_APP_SETTING:-unset}" "\${OP_CONNECT_HOST:-unset}" "\${OPCHAIN_TOKEN_OVERRIDE:-unset}"`,
+      ],
+      {
+        MY_APP_SETTING: "hello",
+        OP_CONNECT_HOST: "https://connect.example",
+        OPCHAIN_TOKEN_OVERRIDE: "ambient-override",
+      },
+    );
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe("");
+    expect(result.stdout).toBe("hello|unset|unset");
+  });
+
+  test("op run with --pass-token also passes the caller's environment", () => {
+    const { result } = runOpchainOp(
+      [
+        "primary",
+        "--read",
+        "--pass-token",
+        "op",
+        "run",
+        "--",
+        "sh",
+        "-c",
+        `printf "%s|%s" "\${MY_APP_SETTING:-unset}" "\${OP_SERVICE_ACCOUNT_TOKEN:-unset}"`,
+      ],
+      { MY_APP_SETTING: "hello" },
+    );
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe("hello|fake-token-123");
+  });
+
+  test("non-run op commands keep the allowlisted environment", () => {
+    const { result, opLogPath } = runOpchainOp(
+      ["primary", "op", "vault", "list"],
+      { MY_APP_SETTING: "hello", OPCHAIN_TEST_OP_LOG_APP_SETTING: "1" },
+    );
+    expect(result.status).toBe(0);
+    expect(readFileSync(opLogPath, "utf8")).toContain("app_setting=\n");
+  });
+
   test("op gets the token but its program does not", () => {
     const { result, opLogPath } = runOpchainOp([
       "primary",

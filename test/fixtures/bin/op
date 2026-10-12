@@ -9,6 +9,9 @@ if [[ -n "${OPCHAIN_TEST_OP_LOG:-}" ]]; then
       printf 'override=%s\n' "${OPCHAIN_TOKEN_OVERRIDE:-}"
       printf 'op_format=%s\n' "${OP_FORMAT:-}"
     fi
+    if [[ -n "${OPCHAIN_TEST_OP_LOG_APP_SETTING:-}" ]]; then
+      printf 'app_setting=%s\n' "${MY_APP_SETTING:-}"
+    fi
   } > "$OPCHAIN_TEST_OP_LOG"
 fi
 
