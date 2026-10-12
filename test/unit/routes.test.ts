@@ -20,6 +20,7 @@ function createCliOptions(commandArgs: readonly string[]): CliOptions {
     accessOverride: undefined,
     allowEnvToken: false,
     allowReveal: false,
+    passToken: false,
     commandArgs,
     debug: false,
     debugFormat: "text",

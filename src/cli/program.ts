@@ -66,6 +66,7 @@ function buildIdentityHelpText(): string {
     "  --write           Force the write profile.",
     "  --allow-env-token Allow OPCHAIN_TOKEN_OVERRIDE for this invocation.",
     "  --allow-reveal    Run an op command that prints secret values (interactive terminal only).",
+    "  --pass-token      Let an op run program see the service-account token (for programs that call op).",
     "",
     "Examples:",
     ...exampleLines,
