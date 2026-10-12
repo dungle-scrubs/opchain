@@ -92,6 +92,7 @@ function parseTelemetryEvents(
 }
 
 type RefusalFormRow = {
+  readonly childArgs?: readonly string[];
   readonly form: string;
   readonly opArgs: readonly string[];
   readonly profileFlag: string;
@@ -140,6 +141,16 @@ const REFUSAL_FORM_ROWS: readonly RefusalFormRow[] = [
   },
   {
     form: "run-no-masking",
+    childArgs: [
+      "run",
+      "--no-masking",
+      "--",
+      "/usr/bin/env",
+      "-u",
+      "OP_SERVICE_ACCOUNT_TOKEN",
+      "OP_BIOMETRIC_UNLOCK_ENABLED=false",
+      "printenv",
+    ],
     opArgs: ["run", "--no-masking", "--", "printenv"],
     profileFlag: "--read",
   },
@@ -565,9 +576,11 @@ describe("op reveal guard", () => {
 
         expect(result.status).toBe(0);
         const opLog = readFileSync(opLogPath, "utf8");
-        expect(opLog.split("\n")[0]).toBe(`args=${row.opArgs.join(" ")}`);
+        expect(opLog.split("\n")[0]).toBe(
+          `args=${(row.childArgs ?? row.opArgs).join(" ")}`,
+        );
         expect(opLog).toBe(
-          `args=${row.opArgs.join(" ")}\ntoken=token-for-primary-read\n`,
+          `args=${(row.childArgs ?? row.opArgs).join(" ")}\ntoken=token-for-primary-read\n`,
         );
         expect(readFileSync(securityLogPath, "utf8")).toBe(
           `service=opchain\naccount=opchain:primary:${profileMode}\n`,
@@ -660,7 +673,7 @@ describe("op reveal guard", () => {
     test("allows masked op run with and without --env-file", () => {
       expectAllowed(
         ["primary", "--read", "op", "run", "--", "npm", "start"],
-        "run -- npm start",
+        "run -- /usr/bin/env -u OP_SERVICE_ACCOUNT_TOKEN OP_BIOMETRIC_UNLOCK_ENABLED=false npm start",
         "run ok",
       );
       expectAllowed(
@@ -675,7 +688,7 @@ describe("op reveal guard", () => {
           "npm",
           "start",
         ],
-        "run --env-file .env.op -- npm start",
+        "run --env-file .env.op -- /usr/bin/env -u OP_SERVICE_ACCOUNT_TOKEN OP_BIOMETRIC_UNLOCK_ENABLED=false npm start",
         "run ok",
       );
     });

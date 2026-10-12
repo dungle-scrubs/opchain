@@ -13,6 +13,8 @@ A token stored through opchain lives in the macOS Keychain. When you run a
 command, opchain pulls the token and passes it to `op` as
 `OP_SERVICE_ACCOUNT_TOKEN`. The token exists only in that child process.
 `env`, `ps`, shell history, and agent context never contain it.
+Programs started by `op run` do not receive it either, unless you pass
+`--pass-token`.
 
 If `OP_SERVICE_ACCOUNT_TOKEN` is already set in the parent environment, it is
 stripped from the child and replaced with the Keychain-resolved token. Ambient
@@ -165,10 +167,11 @@ opchain primary item-structure "Stripe API Key" --vault Services
 }
 ```
 
-`op run` remains the way to hand a secret to a program, including programs
-that call `op` themselves: the delegated child receives the token through its
-sanitized environment, and masked `op run` still passes secret values to the
-child process.
+`op run` hands the program the secret values from its env file, masked in its
+output, and not the service-account token. A program that calls `op` itself
+needs the token: pass `--pass-token` before `op`
+(`opchain primary --read --pass-token op run --env-file .env.op -- <program>`).
+`op run` needs `--` before the program.
 
 ### `.env.op` validation
 
@@ -270,8 +273,8 @@ sanitization, telemetry rules, and state-file guarantees.
 The reveal guard keeps an agent from printing a secret by accident. It does
 not stop an agent that sets out to read one. A process running as your macOS
 user can fake a terminal to pass `--allow-reveal`, call `op` from inside
-`op run`, or run the same `/usr/bin/security` lookup opchain uses to read a
-stored token. [SECURITY.md](SECURITY.md) lists these limits.
+`op run --pass-token`, or run the same `/usr/bin/security` lookup opchain uses
+to read a stored token. [SECURITY.md](SECURITY.md) lists these limits.
 
 What an agent can reach is set by the service-account tokens it can use.
 Scoping those tokens is up to you; opchain cannot do it for you.

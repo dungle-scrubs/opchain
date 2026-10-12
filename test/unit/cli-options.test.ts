@@ -10,6 +10,7 @@ describe("parseCliOptions", () => {
       accessOverride: undefined,
       allowEnvToken: false,
       allowReveal: false,
+      passToken: false,
       commandArgs: [],
       debug: false,
       debugFormat: "text",
@@ -31,12 +32,43 @@ describe("parseCliOptions", () => {
       accessOverride: undefined,
       allowEnvToken: false,
       allowReveal: false,
+      passToken: false,
       commandArgs: ["identity", "list"],
       debug: true,
       debugFormat: "json",
       explicitProfile: undefined,
       help: false,
     });
+  });
+
+  test("parses --pass-token before the identity as an op-execution flag", () => {
+    const result = parseCliOptions([
+      "--pass-token",
+      "human",
+      "op",
+      "run",
+      "--",
+      "true",
+    ]);
+    expect(result.passToken).toBe(true);
+    expect(result.commandArgs).toEqual(["human", "op", "run", "--", "true"]);
+  });
+
+  test("parses --pass-token between identity and op as an op-execution flag", () => {
+    const result = parseCliOptions([
+      "--debug",
+      "human",
+      "--pass-token",
+      "--read",
+      "op",
+      "run",
+      "--",
+      "true",
+    ]);
+    expect(result.passToken).toBe(true);
+    expect(result.accessOverride).toBe("read");
+    expect(result.debug).toBe(true);
+    expect(result.commandArgs).toEqual(["human", "op", "run", "--", "true"]);
   });
 
   test("parses --allow-reveal before the identity as an op-execution flag", () => {
@@ -52,6 +84,7 @@ describe("parseCliOptions", () => {
       accessOverride: undefined,
       allowEnvToken: false,
       allowReveal: true,
+      passToken: false,
       commandArgs: ["human", "op", "vault", "list"],
       debug: false,
       debugFormat: "text",
@@ -75,6 +108,7 @@ describe("parseCliOptions", () => {
       accessOverride: "read",
       allowEnvToken: false,
       allowReveal: true,
+      passToken: false,
       commandArgs: ["human", "op", "vault", "list"],
       debug: true,
       debugFormat: "text",
@@ -99,6 +133,7 @@ describe("parseCliOptions", () => {
       accessOverride: "write",
       allowEnvToken: true,
       allowReveal: false,
+      passToken: false,
       commandArgs: ["human", "op", "vault", "list"],
       debug: false,
       debugFormat: "text",
@@ -123,6 +158,7 @@ describe("parseCliOptions", () => {
       accessOverride: "write",
       allowEnvToken: true,
       allowReveal: false,
+      passToken: false,
       commandArgs: ["human", "op", "vault", "list"],
       debug: false,
       debugFormat: "text",
@@ -144,6 +180,7 @@ describe("parseCliOptions", () => {
       accessOverride: undefined,
       allowEnvToken: false,
       allowReveal: false,
+      passToken: false,
       commandArgs: ["human", "op", "read", "--debug", "secret"],
       debug: false,
       debugFormat: "text",
@@ -159,6 +196,7 @@ describe("parseCliOptions", () => {
       accessOverride: undefined,
       allowEnvToken: false,
       allowReveal: false,
+      passToken: false,
       commandArgs: ["human", "op", "item", "get", "--help"],
       debug: false,
       debugFormat: "text",
@@ -181,6 +219,7 @@ describe("parseCliOptions", () => {
       accessOverride: undefined,
       allowEnvToken: false,
       allowReveal: false,
+      passToken: false,
       commandArgs: ["human", "op", "read", "--debug-format", "json", "secret"],
       debug: false,
       debugFormat: "text",
@@ -196,6 +235,7 @@ describe("parseCliOptions", () => {
       accessOverride: undefined,
       allowEnvToken: false,
       allowReveal: false,
+      passToken: false,
       commandArgs: ["token", "set", "--profile", "writer"],
       debug: false,
       debugFormat: "text",
@@ -218,6 +258,7 @@ describe("parseCliOptions", () => {
       accessOverride: undefined,
       allowEnvToken: false,
       allowReveal: false,
+      passToken: false,
       commandArgs: ["human", "unexpected", "--write", "op", "vault", "list"],
       debug: false,
       debugFormat: "text",
@@ -247,6 +288,7 @@ describe("parseCliOptions", () => {
       accessOverride: undefined,
       allowEnvToken: false,
       allowReveal: false,
+      passToken: false,
       commandArgs: ["human", "op", "vault", "list"],
       debug: false,
       debugFormat: "text",
@@ -276,6 +318,7 @@ describe("parseCliOptions", () => {
       accessOverride: undefined,
       allowEnvToken: false,
       allowReveal: false,
+      passToken: false,
       commandArgs: ["human", "op", "vault", "list"],
       debug: false,
       debugFormat: "text",

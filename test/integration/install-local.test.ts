@@ -20,7 +20,13 @@ describe("install-local", () => {
 
     const installResult = spawnSync(
       "bash",
-      ["-lc", 'HOME="$1" bun run install-local', "--", homePath],
+      [
+        "-lc",
+        'PATH="$2:$PATH" HOME="$1" bun run install-local',
+        "--",
+        homePath,
+        join(process.cwd(), "test/fixtures/bin"),
+      ],
       {
         cwd: process.cwd(),
         encoding: "utf8",
@@ -78,7 +84,7 @@ describe("install-local", () => {
     expect(oprunResult.status).toBe(0);
     expect(oprunResult.stdout).toContain("run ok");
     expect(readFileSync(opLogPath, "utf8")).toContain(
-      "args=run --env-file .env.op -- npm start",
+      "args=run --env-file .env.op -- /usr/bin/env -u OP_SERVICE_ACCOUNT_TOKEN OP_BIOMETRIC_UNLOCK_ENABLED=false npm start",
     );
   });
 });

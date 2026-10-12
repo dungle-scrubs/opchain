@@ -108,8 +108,13 @@ Known limits of this guard, all within the same-user threat model below:
   a pty (`script`, `expect`), which matches the existing threat model
 - a value transformed inside masked `op run` (base64, a substring) still
   prints; opchain cannot detect transformations
-- a child of `op run` that calls `op` itself, and bare `op` invoked without
-  opchain, bypass the guard entirely
+- a child of `op run --pass-token` that calls `op` itself, and bare `op` invoked
+  without opchain, bypass the guard entirely
+- `op run` starts its program through `/usr/bin/env -u OP_SERVICE_ACCOUNT_TOKEN
+  OP_BIOMETRIC_UNLOCK_ENABLED=false` unless `--pass-token` is given, so the
+  program does not inherit the service-account token, and an `op` call inside
+  it fails instead of raising the 1Password app's CLI-access prompt; the
+  program still receives the secret values from its env file
 - an out-file path that is a symlink to a device is not detected; only
   lexical `/dev/` prefixes are checked
 - command aliases are matched from a fixed list (`items`, `documents`, `sa`,

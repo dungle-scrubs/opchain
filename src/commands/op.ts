@@ -7,6 +7,8 @@ import {
   type RevealForm,
 } from "../op/reveal-guard.ts";
 
+import { planRunEnv } from "../op/run-env.ts";
+
 import { buildTokenChildEnv } from "../cli/child-env.ts";
 import type { CommandRequest } from "../cli/command-request.ts";
 import type { CliOptions } from "../cli/options.ts";
@@ -232,6 +234,24 @@ export async function runIdentityOp(
     return refusal;
   }
 
+  const runPlan = planRunEnv(opArgs);
+  if (options.passToken && runPlan.kind === "not-run") {
+    return commandFailure("--pass-token applies only to op run.\n");
+  }
+  if (options.passToken) {
+    writeTelemetry(
+      options,
+      createTelemetryEvent("op.run.token_passed", { identity: identityName }),
+    );
+  }
+  if (!options.passToken && runPlan.kind === "no-separator") {
+    return commandFailure(
+      "op run needs `--` before the program so opchain can keep the service-account token out of its environment: opchain <identity> op run [flags] -- <program>. Pass --pass-token before `op` if the program calls op itself.\n",
+    );
+  }
+  const childArgs =
+    !options.passToken && runPlan.kind === "strip" ? runPlan.args : opArgs;
+
   const commandName = describeOpCommand(opArgs);
   const classification = classifyOpCommand(opArgs);
 
@@ -285,7 +305,7 @@ export async function runIdentityOp(
   // `op run` lives as long as the program it wraps, so a deadline would cap
   // that program's runtime rather than catch a stuck `op`.
   const timeoutMs = commandName === "run" ? null : resolveOpTimeoutMs();
-  const opResult = await runOpChild(opArgs, token, timeoutMs);
+  const opResult = await runOpChild(childArgs, token, timeoutMs);
 
   if (!opResult.ok) {
     return commandFailure(`${opResult.error.message}\n`);
