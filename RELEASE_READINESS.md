@@ -7,11 +7,11 @@ checks; `package.json` is not marked as private.
 
 ## Release Automation
 
-Release automation is intentionally deferred until publishing is explicitly in
-scope. There is no release-please workflow, manifest, or changelog yet.
-
-When publishing becomes intentional, add release-please configuration, a
-changelog policy, and an npm trusted-publisher setup in the same release plan.
+Release automation in `.github/workflows/release.yml` builds, signs, notarizes,
+and publishes macOS arm64 binaries to GitHub Releases when a `v*` tag is pushed
+(see `PACKAGING.md`).
+There is still no release-please workflow, manifest, or npm publishing. Those
+stay deferred until publishing to npm is in scope.
 
 ## Dependency Automation
 
