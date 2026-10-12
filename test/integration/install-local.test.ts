@@ -1,5 +1,13 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync, mkdtempSync } from "node:fs";
+import {
+  linkSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -86,5 +94,39 @@ describe("install-local", () => {
     expect(readFileSync(opLogPath, "utf8")).toContain(
       "args=run --env-file .env.op -- /usr/bin/env -u OP_SERVICE_ACCOUNT_TOKEN OP_BIOMETRIC_UNLOCK_ENABLED=false npm start",
     );
+  });
+
+  test("replaces installed binaries by rename and leaves no staged files", () => {
+    const homePath = mkdtempSync(join(tmpdir(), "opchain-home-"));
+    mkdirSync(join(homePath, ".local", "bin"), { recursive: true });
+    const installPath = join(homePath, ".local", "bin", "opchain");
+    writeFileSync(installPath, "old-opchain\n");
+    const oldLinkPath = join(homePath, "old-opchain-link");
+    linkSync(installPath, oldLinkPath);
+
+    const installResult = spawnSync(
+      "bash",
+      [
+        "-lc",
+        'PATH="$2:$PATH" HOME="$1" bun run install-local',
+        "--",
+        homePath,
+        join(process.cwd(), "test/fixtures/bin"),
+      ],
+      {
+        cwd: process.cwd(),
+        encoding: "utf8",
+      },
+    );
+
+    expect(installResult.status).toBe(0);
+    expect(readFileSync(oldLinkPath, "utf8")).toBe("old-opchain\n");
+    expect(statSync(installPath).ino).not.toBe(statSync(oldLinkPath).ino);
+    expect(statSync(installPath).mode & 0o111).not.toBe(0);
+    expect(
+      readdirSync(join(homePath, ".local", "bin")).filter((name) =>
+        name.startsWith("."),
+      ),
+    ).toEqual([]);
   });
 });

@@ -45,8 +45,24 @@ else
 fi
 
 mkdir -p "$install_dir"
-cp "$opchain_out_file" "$opchain_install_path"
-cp "$oprun_out_file" "$oprun_install_path"
-chmod +x "$opchain_install_path" "$oprun_install_path"
+
+# Install by renaming a staged copy over the target. Rewriting the file in
+# place can crash an opchain process that is running it; after a rename that
+# process keeps the old file.
+install_binary() {
+  local source_path=$1
+  local target_path=$2
+  local staged_path
+  staged_path="$(mktemp "$install_dir/.$(basename "$target_path").XXXXXX")"
+  if ! cp "$source_path" "$staged_path" ||
+    ! chmod 755 "$staged_path" ||
+    ! mv -f "$staged_path" "$target_path"; then
+    rm -f "$staged_path"
+    return 1
+  fi
+}
+
+install_binary "$opchain_out_file" "$opchain_install_path"
+install_binary "$oprun_out_file" "$oprun_install_path"
 printf 'Installed opchain to %s\n' "$opchain_install_path"
 printf 'Installed oprun to %s\n' "$oprun_install_path"
