@@ -130,7 +130,7 @@ jobs:
       - name: Check npm package contents
         run: |
           npm pack --dry-run --json --ignore-scripts > "$RUNNER_TEMP/npm-pack.json"
-          actual="$(jq -r '.[0].files[].path' "$RUNNER_TEMP/npm-pack.json" | sort | tr '\n' ' ')"
+          actual="$(jq -r '.[0].files[].path' "$RUNNER_TEMP/npm-pack.json" | LC_ALL=C sort | tr '\n' ' ')"
           expected="LICENSE MIGRATION.md PACKAGING.md README.md SECURITY.md dist/opchain dist/oprun package.json "
           if [ "$actual" != "$expected" ]; then
             echo "::error::npm package contents differ: $actual"
