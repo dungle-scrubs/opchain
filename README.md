@@ -283,8 +283,7 @@ Recommended:
   account can access.
 - Check what a token actually reaches with `opchain <identity> op vault list`.
   The `vaults` list in `config.toml` records your intent, but opchain does not
-  enforce it, even with `enforce_vault_allowlist = true`. It cannot stop a
-  token from reading a vault outside the list.
+  enforce it, so it cannot stop a token from reading a vault outside the list.
 
 ## Installing from source
 
