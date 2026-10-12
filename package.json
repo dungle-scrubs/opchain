@@ -35,10 +35,10 @@
   "devDependencies": {
     "@biomejs/biome": "2.5.2",
     "@types/bun": "1.3.14",
-    "husky": "9.1.7",
-    "typescript": "6.0.3",
     "commander": "15.0.0",
-    "toml": "4.1.2"
+    "husky": "9.1.7",
+    "toml": "4.3.0",
+    "typescript": "6.0.3"
   },
   "homepage": "https://github.com/dungle-scrubs/opchain#readme",
   "bugs": {
