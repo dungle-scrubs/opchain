@@ -148,6 +148,7 @@ const REFUSAL_FORM_ROWS: readonly RefusalFormRow[] = [
       "/usr/bin/env",
       "-u",
       "OP_SERVICE_ACCOUNT_TOKEN",
+      "OP_BIOMETRIC_UNLOCK_ENABLED=false",
       "printenv",
     ],
     opArgs: ["run", "--no-masking", "--", "printenv"],
@@ -672,7 +673,7 @@ describe("op reveal guard", () => {
     test("allows masked op run with and without --env-file", () => {
       expectAllowed(
         ["primary", "--read", "op", "run", "--", "npm", "start"],
-        "run -- /usr/bin/env -u OP_SERVICE_ACCOUNT_TOKEN npm start",
+        "run -- /usr/bin/env -u OP_SERVICE_ACCOUNT_TOKEN OP_BIOMETRIC_UNLOCK_ENABLED=false npm start",
         "run ok",
       );
       expectAllowed(
@@ -687,7 +688,7 @@ describe("op reveal guard", () => {
           "npm",
           "start",
         ],
-        "run --env-file .env.op -- /usr/bin/env -u OP_SERVICE_ACCOUNT_TOKEN npm start",
+        "run --env-file .env.op -- /usr/bin/env -u OP_SERVICE_ACCOUNT_TOKEN OP_BIOMETRIC_UNLOCK_ENABLED=false npm start",
         "run ok",
       );
     });

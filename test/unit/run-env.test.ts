@@ -12,6 +12,7 @@ describe("planRunEnv", () => {
         "/usr/bin/env",
         "-u",
         "OP_SERVICE_ACCOUNT_TOKEN",
+        "OP_BIOMETRIC_UNLOCK_ENABLED=false",
         "node",
         "app.js",
       ],
@@ -40,6 +41,7 @@ describe("planRunEnv", () => {
         "/usr/bin/env",
         "-u",
         "OP_SERVICE_ACCOUNT_TOKEN",
+        "OP_BIOMETRIC_UNLOCK_ENABLED=false",
         "pnpm",
         "dev",
         "--",
@@ -59,6 +61,7 @@ describe("planRunEnv", () => {
         "/usr/bin/env",
         "-u",
         "OP_SERVICE_ACCOUNT_TOKEN",
+        "OP_BIOMETRIC_UNLOCK_ENABLED=false",
         "true",
       ],
     });

@@ -46,8 +46,37 @@ describe("op run token environment", () => {
     expect(result.stdout).toBe("absent");
     expect(result.stderr).toBe("");
     expect(readFileSync(opLogPath, "utf8")).toBe(
-      `args=run -- /usr/bin/env -u OP_SERVICE_ACCOUNT_TOKEN sh -c ${PRINT_TOKEN}\ntoken=fake-token-123\n`,
+      `args=run -- /usr/bin/env -u OP_SERVICE_ACCOUNT_TOKEN OP_BIOMETRIC_UNLOCK_ENABLED=false sh -c ${PRINT_TOKEN}\ntoken=fake-token-123\n`,
     );
+  });
+  test("turns off the 1Password app integration for the program unless --pass-token", () => {
+    const printFlag = `printf "%s" "\${OP_BIOMETRIC_UNLOCK_ENABLED:-unset}"`;
+    const stripped = runOpchainOp([
+      "primary",
+      "--read",
+      "op",
+      "run",
+      "--",
+      "sh",
+      "-c",
+      printFlag,
+    ]);
+    expect(stripped.result.status).toBe(0);
+    expect(stripped.result.stdout).toBe("false");
+
+    const passed = runOpchainOp([
+      "primary",
+      "--pass-token",
+      "--read",
+      "op",
+      "run",
+      "--",
+      "sh",
+      "-c",
+      printFlag,
+    ]);
+    expect(passed.result.status).toBe(0);
+    expect(passed.result.stdout).toBe("unset");
   });
   test("passes the token with --pass-token before the identity without a TTY", () => {
     const { result, opLogPath } = runOpchainOp([
