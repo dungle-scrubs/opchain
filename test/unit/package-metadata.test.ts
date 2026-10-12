@@ -4,6 +4,11 @@ import { join } from "node:path";
 
 type PackageJson = {
   readonly bin?: Record<string, string>;
+  readonly cpu?: readonly string[];
+  readonly os?: readonly string[];
+  readonly publishConfig?: { readonly access?: string };
+  readonly dependencies?: Record<string, string>;
+  readonly devDependencies?: Record<string, string>;
   readonly files?: readonly string[];
   readonly license?: string;
   readonly name?: string;
@@ -21,7 +26,7 @@ describe("package metadata", () => {
       readFileSync(join(process.cwd(), "package.json"), "utf8"),
     ) as PackageJson;
 
-    expect(packageJson.name).toBe("opchain");
+    expect(packageJson.name).toBe("@dungle-scrubs/opchain");
     expect(packageJson.version).toMatch(/^\d+\.\d+\.\d+$/);
     expect(packageJson.private).toBeUndefined();
     expect(packageJson.license).toBe("MIT");
@@ -33,8 +38,15 @@ describe("package metadata", () => {
       opchain: "dist/opchain",
       oprun: "dist/oprun",
     });
+    expect(packageJson.os).toEqual(["darwin"]);
+    expect(packageJson.cpu).toEqual(["arm64"]);
+    expect(packageJson.publishConfig).toEqual({ access: "public" });
+    expect(packageJson.dependencies).toBeUndefined();
+    expect(packageJson.devDependencies?.commander).toBeDefined();
+    expect(packageJson.devDependencies?.toml).toBeDefined();
     expect(packageJson.files).toEqual([
-      "dist/",
+      "dist/opchain",
+      "dist/oprun",
       "README.md",
       "MIGRATION.md",
       "PACKAGING.md",

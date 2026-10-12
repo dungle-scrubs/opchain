@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write
 
 concurrency:
   group: release-${{ github.ref }}
@@ -20,6 +21,15 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+
+      - name: Check tag matches package version
+        if: github.event_name == 'push'
+        run: |
+          expected="v$(jq -r .version package.json)"
+          if [ "$expected" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version ($expected)"
+            exit 1
+          fi
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
@@ -106,6 +116,27 @@ jobs:
             shasum -a 256 "${archive}" > "${archive}.sha256"
           done
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install npm 11.21.0
+        run: |
+          npm install -g npm@11.21.0
+          npm --version
+
+      - name: Check npm package contents
+        run: |
+          npm pack --dry-run --json --ignore-scripts > "$RUNNER_TEMP/npm-pack.json"
+          actual="$(jq -r '.[0].files[].path' "$RUNNER_TEMP/npm-pack.json" | sort | tr '\n' ' ')"
+          expected="LICENSE MIGRATION.md PACKAGING.md README.md SECURITY.md dist/opchain dist/oprun package.json "
+          if [ "$actual" != "$expected" ]; then
+            echo "::error::npm package contents differ: $actual"
+            exit 1
+          fi
+
       - name: Create GitHub Release
         if: github.event_name == 'push'
         env:
@@ -116,6 +147,28 @@ jobs:
             --generate-notes \
             *-macos-arm64.tar.gz \
             *-macos-arm64.tar.gz.sha256
+
+      - name: Stage npm release
+        if: github.event_name == 'push'
+        env:
+          NPM_CONFIG_IGNORE_SCRIPTS: "true"
+        run: |
+          set -o pipefail
+          npm stage publish . 2>&1 | tee "$RUNNER_TEMP/npm-stage.log"
+          {
+            echo "## npm"
+            echo
+            echo "Staged @dungle-scrubs/opchain@${GITHUB_REF_NAME#v}. Approve it with:"
+            echo
+            echo '```bash'
+            echo "npm stage list @dungle-scrubs/opchain"
+            echo "npm stage approve <stage-id>"
+            echo '```'
+            echo
+            echo '```text'
+            cat "$RUNNER_TEMP/npm-stage.log"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload dry-run artifacts
         if: github.event_name == 'workflow_dispatch'

@@ -59,15 +59,15 @@ they fail closed until you name one.
 
 ### 1. Install
 
+On an Apple silicon Mac:
+
 ```bash
-git clone https://github.com/dungle-scrubs/opchain.git
-cd opchain
-bun install --frozen-lockfile
-bun run build
-bun run install-local
+npm install -g @dungle-scrubs/opchain
 ```
 
-This places `opchain` and `oprun` in `~/.local/bin`.
+This installs the signed, notarized `opchain` and `oprun` binaries. Bun is not
+needed. To build from source instead, see
+[Installing from source](#installing-from-source).
 
 ### 2. Configure
 
@@ -293,10 +293,14 @@ Recommended:
 Requirements: [Bun](https://bun.sh) 1.3+.
 
 ```bash
+git clone https://github.com/dungle-scrubs/opchain.git
+cd opchain
 bun install --frozen-lockfile
 bun run build
 bun run install-local
 ```
+
+This places `opchain` and `oprun` in `~/.local/bin`.
 
 Verify:
 

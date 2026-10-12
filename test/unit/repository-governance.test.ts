@@ -33,7 +33,7 @@ describe("repository governance", () => {
     );
 
     expect(readinessDoc).toContain("Release automation");
-    expect(readinessDoc).toContain("intentionally deferred");
+    expect(readinessDoc).toContain("npm trusted publishing");
     expect(readinessDoc).toContain("Manual GitHub Settings");
     expect(readinessDoc).toContain("secret scanning");
     expect(readinessDoc).toContain("branch protection");

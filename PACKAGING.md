@@ -7,6 +7,7 @@ This document covers the current local packaging flow for opchain.
 Implemented now:
 
 - compiled Bun binary build
+- npm package `@dungle-scrubs/opchain`, staged by the release workflow and approved by the owner
 - local install into `~/.local/bin/opchain`
 - `doctor` reports binary path and config path
 - package metadata for release-readiness review
@@ -18,7 +19,6 @@ Implemented now:
 
 Not implemented yet:
 
-- public npm publishing
 - stapling: a bare Mach-O binary cannot be stapled, so Gatekeeper checks the
   notarization ticket online on first run
 
@@ -87,6 +87,31 @@ For local signed installs:
 OPCHAIN_CODESIGN_IDENTITY="Developer ID Application: <Name> (<TEAMID>)" bun run install-local
 ```
 
+## npm
+
+The package `@dungle-scrubs/opchain` ships the signed, notarized `dist/opchain`
+and `dist/oprun` for Apple silicon Macs, with no runtime dependencies.
+
+The release workflow stages each `v*` release through npm trusted publishing
+(OIDC, no token). A staged version is not public until the owner approves it
+with npm 2FA:
+
+```bash
+npm stage list @dungle-scrubs/opchain
+npm stage approve <stage-id>
+```
+
+The trusted publisher is configured once, after the package exists, with npm
+11.15.0 or later:
+
+```bash
+npm trust github @dungle-scrubs/opchain --file release.yml \
+  --repo dungle-scrubs/opchain --allow-stage-publish
+```
+
+Each release: set `version` in `package.json` in a pull request, merge it, then
+push the tag `v<version>`. The workflow refuses a tag that does not match.
+
 ## Verify the install
 
 ```bash
@@ -102,8 +127,8 @@ OPCHAIN_CODESIGN_IDENTITY="Developer ID Application: <Name> (<TEAMID>)" bun run 
 
 ## Distribution dry run
 
-The package metadata is present for release-readiness checks. The package is
-MIT-licensed; review the build contents below before publishing.
+The package is MIT-licensed. The release workflow checks these contents before it
+stages a release.
 
 After building binaries, inspect the package contents with:
 
