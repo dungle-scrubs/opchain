@@ -33,7 +33,7 @@ touch "\${!#}"
 exit "\${FAKE_DITTO_EXIT:-0}"`,
     xcrun: `printf 'xcrun %s\\n' "$*" >> "$FAKE_LOG"
 if [[ "$2" == submit ]]; then
-  if [[ -v FAKE_NOTARY_STDOUT ]]; then printf '%s\\n' "$FAKE_NOTARY_STDOUT"; else
+  if [[ -n "\${FAKE_NOTARY_STDOUT+set}" ]]; then printf '%s\\n' "$FAKE_NOTARY_STDOUT"; else
     printf '{"id":"sub-1","status":"%s"}\\n' "\${FAKE_NOTARY_STATUS:-Accepted}"
   fi
   exit 0
