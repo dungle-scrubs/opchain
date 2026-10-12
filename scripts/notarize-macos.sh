@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
-# Submit the given signed binaries to Apple's notary service with an App Store Connect API key and wait for the result.
+# Submit the given signed binaries to Apple's notary service with an App
+# Store Connect API key and wait for the result.
+#
 # Usage: notarize-macos.sh <binary>...
-# Environment: APPLE_API_KEY_PATH, APPLE_API_KEY_ID, APPLE_API_ISSUER_ID (required);
-#              NOTARY_TIMEOUT (optional, default 30m)
-# Exit 0: Accepted. Exit 1: rejected, unreadable result, or a failed step. Exit 2: usage or missing environment.
+# Environment: APPLE_API_KEY_PATH, APPLE_API_KEY_ID, APPLE_API_ISSUER_ID
+#              (required); NOTARY_TIMEOUT (optional, default 30m)
+# Exit 0: Accepted.
+# Exit 1: rejected, unreadable result, or a failed step.
+# Exit 2: usage or missing environment.
 set -euo pipefail
 
 if [[ $# -eq 0 ]]; then

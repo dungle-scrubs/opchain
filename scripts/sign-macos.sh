@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
-# Sign the given binaries with a code-signing identity and the hardened runtime, then verify them.
+# Sign the given binaries with a code-signing identity and the hardened
+# runtime, then verify them.
+#
 # Usage: sign-macos.sh --identity <name> [--team-id <id>] [--timestamp] <binary>...
-# Exit 0: all binaries signed and verified. Exit 1: a check or codesign call failed. Exit 2: usage error.
+# Exit 0: all binaries signed and verified.
+# Exit 1: a check or codesign call failed.
+# Exit 2: usage error.
 set -euo pipefail
 
 usage() {
