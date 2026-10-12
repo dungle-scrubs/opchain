@@ -67,6 +67,7 @@ function buildHelpText(): string {
     "  env file: .env.op",
     "",
     "Environment overrides:",
+    "  OPRUN_PASS_TOKEN Set to 1 for a program that calls op itself.",
     "  OPRUN_IDENTITY   Identity name. Default: primary",
     "  OPRUN_PROFILE    Profile name. Default: read",
     "  OPRUN_ENV_FILE   Env template path. Default: .env.op",
@@ -96,6 +97,7 @@ export function runOprun(argv: readonly string[]): number {
     config.opchainBin,
     [
       config.identity,
+      ...(process.env.OPRUN_PASS_TOKEN === "1" ? ["--pass-token"] : []),
       "--profile",
       config.profile,
       "op",
