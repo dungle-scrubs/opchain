@@ -98,7 +98,6 @@ function buildMigratedConfigToml(
     "[defaults]",
     `projects_dir = "${escapeTomlString(projectsDir)}"`,
     `expires_threshold_days = ${legacyConfig.expiresThreshold ?? 14}`,
-    "enforce_vault_allowlist = true",
     "",
     "[identities.primary]",
     'default_mode = "auto"',
