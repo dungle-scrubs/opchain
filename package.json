@@ -1,6 +1,6 @@
 {
   "name": "@dungle-scrubs/opchain",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "macOS-first CLI for 1Password service-account workflows",
   "license": "MIT",
   "type": "module",
