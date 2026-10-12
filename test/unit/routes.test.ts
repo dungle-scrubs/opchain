@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 
-import { findCommandDispatch } from "../../src/cli/routes.ts";
+import {
+  describeUnmatchedCommand,
+  findCommandDispatch,
+} from "../../src/cli/routes.ts";
 import type { CliOptions } from "../../src/cli/options.ts";
 import { runExpiresScan } from "../../src/commands/expires-scan.ts";
 import { runIdentityList } from "../../src/commands/identity.ts";
@@ -92,5 +95,59 @@ describe("findCommandDispatch", () => {
     );
 
     expect(dispatch).toBeNull();
+  });
+});
+
+describe("describeUnmatchedCommand", () => {
+  test("names a boolean op-execution flag after the command word", () => {
+    expect(
+      describeUnmatchedCommand([
+        "primary",
+        "--pass-token",
+        "item-structure",
+        "x",
+      ]),
+    ).toBe(
+      "--pass-token applies only to op commands: opchain <identity> --pass-token op <args...>\n",
+    );
+  });
+
+  test("names the first op-execution flag even before the command word", () => {
+    expect(
+      describeUnmatchedCommand(["--write", "primary", "token", "list"]),
+    ).toBe(
+      "--write applies only to op commands: opchain <identity> --write op <args...>\n",
+    );
+  });
+
+  test("names --profile with its value placeholder", () => {
+    expect(
+      describeUnmatchedCommand([
+        "primary",
+        "--profile",
+        "read",
+        "item-structure",
+        "x",
+      ]),
+    ).toBe(
+      "--profile applies only to op commands: opchain <identity> --profile <name> op <args...>\n",
+    );
+  });
+
+  test("gives a generic reason without echoing arguments", () => {
+    const description = describeUnmatchedCommand([
+      "primary",
+      "bogus",
+      "s3cr3t-value",
+    ]);
+
+    expect(description).toBe("No command matches these arguments.\n");
+    expect(description).not.toContain("s3cr3t-value");
+  });
+
+  test("gives a generic reason when the op marker is present", () => {
+    expect(describeUnmatchedCommand(["primary", "--read", "op"])).toBe(
+      "No command matches these arguments.\n",
+    );
   });
 });

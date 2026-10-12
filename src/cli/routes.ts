@@ -1,4 +1,4 @@
-import type { CliOptions } from "./options.ts";
+import { OP_EXECUTION_FLAGS, type CliOptions } from "./options.ts";
 import type { CommandRequest } from "./command-request.ts";
 import {
   CLI_COMMAND_DEFINITIONS,
@@ -125,4 +125,33 @@ export function findCommandDispatch(
       trailingArgs,
     },
   };
+}
+
+/**
+ * Explains why parsed command tokens matched no command route.
+ *
+ * An op-execution flag on a command that is not an `op` command is a likely
+ * typo, so the flag is named with the shape that would accept it. Otherwise
+ * the reason stays generic. No other argument token is ever echoed: an
+ * argument can be a secret typed by mistake.
+ *
+ * @param commandArgs - Parsed command tokens.
+ * @returns {string} One-line reason ending in a newline.
+ */
+export function describeUnmatchedCommand(
+  commandArgs: readonly string[],
+): string {
+  const flag = commandArgs.includes("op")
+    ? undefined
+    : commandArgs.find((token) => OP_EXECUTION_FLAGS.includes(token));
+
+  if (flag === "--profile") {
+    return "--profile applies only to op commands: opchain <identity> --profile <name> op <args...>\n";
+  }
+
+  if (flag !== undefined) {
+    return `${flag} applies only to op commands: opchain <identity> ${flag} op <args...>\n`;
+  }
+
+  return "No command matches these arguments.\n";
 }

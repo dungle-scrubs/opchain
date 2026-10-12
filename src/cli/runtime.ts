@@ -5,7 +5,7 @@ import {
 
 import { parseCliOptions, type CliOptions } from "./options.ts";
 import { buildProgram } from "./program.ts";
-import { findCommandDispatch } from "./routes.ts";
+import { describeUnmatchedCommand, findCommandDispatch } from "./routes.ts";
 import { resolveCommandName, writeTelemetry } from "./telemetry.ts";
 import type { CommandRequest } from "./command-request.ts";
 import type { CommandHandler } from "./manifest.ts";
@@ -75,6 +75,7 @@ export async function runCli(
 
   const dispatch = deps.findCommandDispatch(options);
   if (dispatch === null) {
+    deps.writeStderr(describeUnmatchedCommand(options.commandArgs));
     deps.writeStderr(program.helpInformation());
     return 1;
   }

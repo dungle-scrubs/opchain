@@ -66,9 +66,33 @@ describe("runCli", () => {
 
     expect(exitCode).toBe(1);
     expect(runtime.stdout).toEqual([]);
-    expect(runtime.stderr).toEqual(["HELP\n"]);
+    expect(runtime.stderr).toEqual([
+      "No command matches these arguments.\n",
+      "HELP\n",
+    ]);
     expect(runtime.telemetry).toHaveLength(1);
     expect(runtime.telemetry[0]?.name).toBe("cli.start");
+  });
+
+  test("names the op-execution flag that a non-op command rejected", async () => {
+    const runtime = createRuntimeDeps({
+      parseCliOptions: () =>
+        createCliOptions({
+          commandArgs: ["primary", "--read", "item-structure", "x"],
+        }),
+    });
+
+    const exitCode = await runCli(
+      ["primary", "--read", "item-structure", "x"],
+      runtime.deps,
+    );
+
+    expect(exitCode).toBe(1);
+    expect(runtime.stdout).toEqual([]);
+    expect(runtime.stderr).toEqual([
+      "--read applies only to op commands: opchain <identity> --read op <args...>\n",
+      "HELP\n",
+    ]);
   });
 
   test("parse errors short-circuit before command dispatch", async () => {

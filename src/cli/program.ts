@@ -60,7 +60,7 @@ function buildIdentityHelpText(): string {
     "Identity-scoped commands:",
     ...commandLines,
     "",
-    "Op-execution options (valid only before `op`, ignored by other identity commands):",
+    "Op-execution options (only before `op`; other commands reject them):",
     "  --profile <name>  Force an explicitly named profile.",
     "  --read            Force the read profile.",
     "  --write           Force the write profile.",
