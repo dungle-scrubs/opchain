@@ -21,7 +21,11 @@ describe("npm package", () => {
     const packed = spawnSync(
       "npm",
       ["pack", "--dry-run", "--json", "--ignore-scripts"],
-      { cwd: process.cwd(), encoding: "utf8" },
+      {
+        cwd: process.cwd(),
+        encoding: "utf8",
+        env: { ...process.env, npm_config_update_notifier: "false" },
+      },
     );
     expect(packed.status).toBe(0);
     const result = JSON.parse(packed.stdout) as readonly PackResult[];
@@ -32,5 +36,5 @@ describe("npm package", () => {
     for (const path of paths) expect(allowedPaths.has(path)).toBe(true);
     for (const path of requiredPaths) expect(paths).toContain(path);
     expect(packageInfo.name).toBe("@dungle-scrubs/opchain");
-  });
+  }, 60_000);
 });
