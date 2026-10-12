@@ -115,6 +115,61 @@ opchain primary --write op item edit "Stripe API Key" --vault Services
 opchain primary --allow-env-token op user list
 ```
 
+Secret-printing `op` commands are refused by default. opchain inspects the
+`op` command line before resolving a token or spawning anything, then exits 1
+with the safe alternative when the command would print a secret value:
+
+- `op read`, `op inject`, and `op document get` writing to stdout (pass
+  `-o <file>` or `--out-file <file>` and they stay allowed)
+- `op item get` with `--reveal`, `--otp`, or `--format json`
+- `op item create` and `op item edit` with `--reveal` or `--format json`
+- `op run --no-masking`
+- `op signin` (opchain injects a service-account token, so it is never needed)
+- `op service-account create`, `op connect token create`, and
+  `op events-api create` (each prints a new token)
+
+These keep running unchanged: masked `op run` (the default, including
+`--env-file`), `op item get` in its human-readable default output, `op item
+list`, `op vault list`, and the out-file variants above.
+
+To run a refused command anyway from an interactive terminal, pass
+`--allow-reveal` before `op`:
+
+```bash
+opchain primary --allow-reveal op read op://Services/Stripe/api_key
+```
+
+`--allow-reveal` requires an interactive stdin (a TTY); stdout may stay piped
+(`| pbcopy`). The check is a speed bump for agents, not a boundary - see
+[SECURITY.md](SECURITY.md).
+
+To inspect an item without seeing any value, use `item-structure`:
+
+```bash
+opchain primary item-structure "Stripe API Key" --vault Services
+```
+
+```json
+{
+  "title": "Stripe API Key",
+  "vault": "Services",
+  "category": "API_CREDENTIAL",
+  "fields": [
+    {
+      "label": "api_key",
+      "type": "CONCEALED",
+      "has_value": true,
+      "value_length": 108
+    }
+  ]
+}
+```
+
+`op run` remains the way to hand a secret to a program, including programs
+that call `op` themselves: the delegated child receives the token through its
+sanitized environment, and masked `op run` still passes secret values to the
+child process.
+
 ### `.env.op` validation
 
 ```bash
@@ -184,6 +239,13 @@ path - when opchain pulls a stored token and passes it to an `op` child process
 - the token is never placed in the parent shell environment, `ps` output,
 shell history, or agent context. It exists only inside the delegated child
 process.
+
+The same default covers the secrets the token unlocks: secret-printing `op`
+command forms are refused unless `--allow-reveal` is passed from an
+interactive terminal, so agent context never contains secret values printed
+through opchain by default. `item-structure` and `secrets inspect` report
+item metadata only, and the refusal message itself never echoes an argument
+value.
 
 There is one deliberate exception, on the write path. `opchain token set`
 stores a token by shelling out to `/usr/bin/security add-generic-password`,

@@ -8,6 +8,22 @@ type SecretInspectMetadata = {
   readonly vaultName: string;
 };
 
+/** One field entry of a structure-only item report. */
+export type ItemFieldStructure = {
+  readonly label: string;
+  readonly type: string;
+  readonly has_value: boolean;
+  readonly value_length: number;
+};
+
+/** Structure-only item report: identity fields plus per-field value shape. */
+export type ItemStructure = {
+  readonly title: string;
+  readonly vault: string;
+  readonly category: string;
+  readonly fields: readonly ItemFieldStructure[];
+};
+
 /**
  * Extracts metadata from one `op item get --format json` payload.
  *
@@ -63,6 +79,79 @@ export function formatSecretInspectOutput(
     `fields: ${metadata.fieldLabels.join(", ")}`,
     `expires_at: ${metadata.expiresAt ?? "none"}`,
   ].join("\n");
+}
+
+/**
+ * Extracts one structure-only report from an `op item get --format json` payload.
+ *
+ * Values never cross the result: each field contributes its label, type,
+ * whether it has a value, and its value length in Unicode code points.
+ * A missing `fields` array is an empty list; a missing field `label` or
+ * `type` is an empty string; a field `value` that is neither absent, null,
+ * nor a string is invalid.
+ *
+ * @param input - Parsed JSON payload.
+ * @returns {ItemStructure | string} Structure-only report or an error.
+ */
+export function parseItemStructure(input: unknown): ItemStructure | string {
+  const INVALID = "Invalid item structure payload.";
+  try {
+    if (!isRecord(input)) {
+      return INVALID;
+    }
+
+    const title = readStringProperty(input, "title");
+    const vault = input.vault;
+    if (!isRecord(vault)) {
+      return INVALID;
+    }
+
+    const vaultName = readStringProperty(vault, "name");
+    const category = readStringProperty(input, "category");
+
+    const fieldsPayload = input.fields;
+    if (fieldsPayload === undefined) {
+      return {
+        title,
+        vault: vaultName,
+        category,
+        fields: [],
+      };
+    }
+
+    if (!Array.isArray(fieldsPayload)) {
+      return INVALID;
+    }
+
+    const fields: ItemFieldStructure[] = [];
+    for (const entry of fieldsPayload) {
+      if (!isRecord(entry)) {
+        return INVALID;
+      }
+
+      const value = entry.value;
+      if (value !== undefined && value !== null && typeof value !== "string") {
+        return INVALID;
+      }
+
+      const valueText = typeof value === "string" ? value : "";
+      fields.push({
+        label: readOptionalStringProperty(entry, "label") ?? "",
+        type: readOptionalStringProperty(entry, "type") ?? "",
+        has_value: valueText.length > 0,
+        value_length: [...valueText].length,
+      });
+    }
+
+    return {
+      title,
+      vault: vaultName,
+      category,
+      fields,
+    };
+  } catch {
+    return INVALID;
+  }
 }
 
 /**

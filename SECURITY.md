@@ -8,11 +8,12 @@ wrong or this file must be updated in the same change.
 ## Status
 
 The repository now implements the core security-sensitive runtime behavior:
-fail-closed profile selection, explicit env-token opt-in, sanitized provider
+fail-closed profile selection, explicit env-token opt-in, refusal of
+secret-printing `op` commands without `--allow-reveal`, sanitized provider
 and delegated `op` environments, redacted provider telemetry, stable
-expiry-state validation, and all-or-nothing migration apply behavior. This file
-remains the source of truth for token, telemetry, subprocess, and state-file
-boundaries.
+expiry-state validation, and all-or-nothing migration apply behavior. This
+file remains the source of truth for token, telemetry, subprocess, and
+state-file boundaries.
 
 ## Security goal
 
@@ -72,6 +73,51 @@ It is a read-safe allowlist. Only explicitly allowlisted read-safe command
 shapes may resolve automatically. Everything else must require explicit profile
 selection.
 
+### Secret-printing op commands are refused by default
+
+The CLI must not run an `op` command that prints a secret value to stdout
+unless the current invocation explicitly opts in.
+
+Refused forms, detected from the `op` command line before any token
+resolution, config loading, or child spawn:
+
+- `op read`, `op inject`, and `op document get` without a valid out-file
+  (`-o` / `--out-file` whose value is non-empty, not `-`, and does not
+  resolve under `/dev/`)
+- `op item get` with `--reveal`, `--otp`, or `--format json`
+- `op item create` and `op item edit` with `--reveal` or `--format json`
+- `op run --no-masking`
+- `op signin` in every form, including `--raw` and `-f`
+- `op service-account create`, `op connect token create`, and
+  `op events-api create`
+- any unknown dash token while the command path is still a prefix of one of
+  the forms above (`unclassifiable-order`), which fails closed
+- a `--` separator directly preceded by a dash flag that is not a known
+  boolean flag (`unclassifiable-order`), because op hands a value flag the
+  next token even when that token is `--`, so the separator never reaches
+  op and the tokens after it are still parsed as flags
+
+The only override is `--allow-reveal`, accepted before the identity or
+between the identity and `op`. It additionally requires an interactive
+stdin (a TTY); stdout may stay piped. The refusal message names the safe
+alternative and never echoes an argument value.
+
+Known limits of this guard, all within the same-user threat model below:
+
+- the TTY gate is a speed bump, not a boundary: a same-user process can fake
+  a pty (`script`, `expect`), which matches the existing threat model
+- a value transformed inside masked `op run` (base64, a substring) still
+  prints; opchain cannot detect transformations
+- a child of `op run` that calls `op` itself, and bare `op` invoked without
+  opchain, bypass the guard entirely
+- an out-file path that is a symlink to a device is not detected; only
+  lexical `/dev/` prefixes are checked
+- command aliases are matched from a fixed list (`items`, `documents`, `sa`,
+  `connect tokens`), so an alias a future op release adds may not be covered
+
+Structure-only inspection goes through `item-structure`, which prints
+labels, types, value presence, and value length - never a value.
+
 ### Subprocess output is not telemetry
 
 Debug mode must never capture or emit child stdout or stderr.
@@ -83,6 +129,8 @@ Allowed telemetry:
 
 - identity and profile selection
 - provider attempts and outcomes
+- reveal-guard decisions (`op.reveal.refused` / `op.reveal.allowed`) with
+  identity, form id, and refusal reason only
 - command classification
 - exit code
 - duration

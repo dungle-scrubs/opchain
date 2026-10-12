@@ -46,9 +46,12 @@ describe("single-profile op execution", () => {
 `,
     );
     expect(readFileSync(opLogPath, "utf8")).toBe(
-      `${["args=vault list", "token=token-for-human-default", "override="].join(
-        "\n",
-      )}
+      `${[
+        "args=vault list",
+        "token=token-for-human-default",
+        "override=",
+        "op_format=",
+      ].join("\n")}
 `,
     );
   });

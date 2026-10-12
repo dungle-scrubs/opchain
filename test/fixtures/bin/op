@@ -7,6 +7,7 @@ if [[ -n "${OPCHAIN_TEST_OP_LOG:-}" ]]; then
     printf 'token=%s\n' "${OP_SERVICE_ACCOUNT_TOKEN:-}"
     if [[ -n "${OPCHAIN_TEST_OP_LOG_ENV:-}" ]]; then
       printf 'override=%s\n' "${OPCHAIN_TOKEN_OVERRIDE:-}"
+      printf 'op_format=%s\n' "${OP_FORMAT:-}"
     fi
   } > "$OPCHAIN_TEST_OP_LOG"
 fi
@@ -17,6 +18,26 @@ fi
 
 if [[ "$*" == "vault list" ]]; then
   printf 'vault list ok\n'
+  exit 0
+fi
+
+if [[ "${1:-}" == "item" && "${2:-}" == "list" ]]; then
+  printf 'item list ok\n'
+  exit 0
+fi
+
+if [[ "${1:-}" == "item" && ( "${2:-}" == "edit" || "${2:-}" == "create" ) ]]; then
+  printf 'item %s ok\n' "$2"
+  exit 0
+fi
+
+if [[ "${1:-}" == "document" && "${2:-}" == "get" ]]; then
+  printf 'document get ok\n'
+  exit 0
+fi
+
+if [[ "${1:-}" == "inject" ]]; then
+  printf 'inject ok\n'
   exit 0
 fi
 
@@ -64,8 +85,8 @@ if [[ "$1" == "item" && "$2" == "get" ]]; then
   exit 0
 fi
 
-if [[ "$*" == "item edit Stripe --vault Services" ]]; then
-  printf 'item edit ok\n'
+if [[ "${OPCHAIN_TEST_OP_PASSTHROUGH:-}" == "1" ]]; then
+  printf 'passthrough ok\n'
   exit 0
 fi
 
