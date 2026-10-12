@@ -48,14 +48,12 @@ type OpChildResult =
  * Runs `op` while streaming output through and retaining only byte counts.
  *
  * @param opArgs - Arguments passed after the `op` token.
- * @param _token - Resolved service-account token already injected into `env`.
  * @param timeoutMs - Kill deadline, or `null` for no deadline.
  * @param env - Environment passed to the delegated `op` process.
  * @returns {Promise<OpChildResult>} Child exit data or spawn error.
  */
 function runOpChild(
   opArgs: readonly string[],
-  _token: string,
   timeoutMs: number | null,
   env: NodeJS.ProcessEnv,
 ): Promise<OpChildResult> {
@@ -309,7 +307,6 @@ export async function runIdentityOp(
   const timeoutMs = commandName === "run" ? null : resolveOpTimeoutMs();
   const opResult = await runOpChild(
     childArgs,
-    token,
     timeoutMs,
     commandName === "run" ? buildRunChildEnv(token) : buildTokenChildEnv(token),
   );
