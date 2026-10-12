@@ -22,20 +22,18 @@ oprun_install_path="$install_dir/oprun"
 # binaries keep their default ad-hoc signature and install proceeds normally.
 # Override the identity name with OPCHAIN_CODESIGN_IDENTITY.
 codesign_identity="${OPCHAIN_CODESIGN_IDENTITY:-opchain-codesign}"
-opchain_identifier="dev.opchain.opchain"
-oprun_identifier="dev.opchain.oprun"
 
 mkdir -p "$out_dir"
 bun build "$root_dir/src/index.ts" --compile --outfile "$opchain_out_file"
 bun build "$root_dir/src/oprun.ts" --compile --outfile "$oprun_out_file"
 
-# Sign the dist outputs before copying. The signature is embedded in the
-# Mach-O, so the copied binaries inherit it and share the same identity.
+# Sign with the hardened runtime through scripts/sign-macos.sh before copying.
+# OPCHAIN_CODESIGN_IDENTITY may name a Developer ID Application identity.
+# The embedded Mach-O signature is inherited by the copied binaries.
 if ! command -v codesign >/dev/null 2>&1 || ! command -v security >/dev/null 2>&1; then
   printf 'codesign/security unavailable; leaving default ad-hoc signature in place.\n'
 elif security find-identity -v -p codesigning 2>/dev/null | grep -qF -- "$codesign_identity"; then
-  codesign --force --sign "$codesign_identity" --identifier "$opchain_identifier" "$opchain_out_file"
-  codesign --force --sign "$codesign_identity" --identifier "$oprun_identifier" "$oprun_out_file"
+  "$root_dir/scripts/sign-macos.sh" --identity "$codesign_identity" "$opchain_out_file" "$oprun_out_file"
   printf 'Signed binaries with code-signing identity "%s".\n' "$codesign_identity"
 else
   printf 'Code-signing identity "%s" not found; skipping signing.\n' "$codesign_identity"
