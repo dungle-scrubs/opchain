@@ -65,6 +65,12 @@ resolution.
 Provider subprocess environments are sanitized so ambient opchain token values
 and delegated `op` service-account tokens do not cross into provider children.
 
+Delegated `op` processes get the same allowlist, except `op run`. It receives
+the caller's environment minus every variable whose name starts with `OP_` or
+`OPCHAIN_`: its program sees the caller's own variables, while nothing in the
+caller's environment can redirect `op` or supply a token. The program still
+starts without the service-account token unless `--pass-token` is given.
+
 ### `auto` mode is fail-closed
 
 `auto` is not a write detector.

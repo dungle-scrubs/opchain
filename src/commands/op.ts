@@ -9,7 +9,7 @@ import {
 
 import { planRunEnv } from "../op/run-env.ts";
 
-import { buildTokenChildEnv } from "../cli/child-env.ts";
+import { buildRunChildEnv, buildTokenChildEnv } from "../cli/child-env.ts";
 import type { CommandRequest } from "../cli/command-request.ts";
 import type { CliOptions } from "../cli/options.ts";
 import {
@@ -48,18 +48,18 @@ type OpChildResult =
  * Runs `op` while streaming output through and retaining only byte counts.
  *
  * @param opArgs - Arguments passed after the `op` token.
- * @param token - Service-account token injected into the child process.
  * @param timeoutMs - Kill deadline, or `null` for no deadline.
+ * @param env - Environment passed to the delegated `op` process.
  * @returns {Promise<OpChildResult>} Child exit data or spawn error.
  */
 function runOpChild(
   opArgs: readonly string[],
-  token: string,
   timeoutMs: number | null,
+  env: NodeJS.ProcessEnv,
 ): Promise<OpChildResult> {
   return new Promise((resolve) => {
     const child = spawn(resolveOpPath(), opArgs, {
-      env: buildTokenChildEnv(token),
+      env,
       stdio: ["inherit", "pipe", "pipe"],
     });
     let stderrBytes = 0;
@@ -305,7 +305,11 @@ export async function runIdentityOp(
   // `op run` lives as long as the program it wraps, so a deadline would cap
   // that program's runtime rather than catch a stuck `op`.
   const timeoutMs = commandName === "run" ? null : resolveOpTimeoutMs();
-  const opResult = await runOpChild(childArgs, token, timeoutMs);
+  const opResult = await runOpChild(
+    childArgs,
+    timeoutMs,
+    commandName === "run" ? buildRunChildEnv(token) : buildTokenChildEnv(token),
+  );
 
   if (!opResult.ok) {
     return commandFailure(`${opResult.error.message}\n`);

@@ -1,6 +1,37 @@
 import { describe, expect, test } from "bun:test";
 
-import { buildTokenChildEnv } from "../../src/cli/child-env.ts";
+import {
+  buildRunChildEnv,
+  buildTokenChildEnv,
+} from "../../src/cli/child-env.ts";
+
+describe("buildRunChildEnv", () => {
+  test("passes caller variables while removing ambient op and opchain variables", () => {
+    const env = buildRunChildEnv("resolved-profile-token", {
+      AWS_SECRET_ACCESS_KEY: "caller-aws",
+      MY_APP_SETTING: "hello",
+      OP_CONNECT_HOST: "https://connect.example",
+      OP_SERVICE_ACCOUNT_TOKEN: "ambient-token",
+      OP_SESSION_abc: "session",
+      OPCHAIN_TOKEN_OVERRIDE: "ambient-override",
+      OPCHAIN_SECRET: "near-miss",
+      OPCHAIN_TEST_OP_LOG: "/tmp/op-log",
+      PATH: "/usr/bin:/bin",
+      UNDEFINED_VALUE: undefined,
+    });
+
+    expect(env.AWS_SECRET_ACCESS_KEY).toBe("caller-aws");
+    expect(env.MY_APP_SETTING).toBe("hello");
+    expect(env.PATH).toBe("/usr/bin:/bin");
+    expect(env.OPCHAIN_TEST_OP_LOG).toBe("/tmp/op-log");
+    expect(env.OP_SERVICE_ACCOUNT_TOKEN).toBe("resolved-profile-token");
+    expect(env.OP_CONNECT_HOST).toBeUndefined();
+    expect(env.OP_SESSION_abc).toBeUndefined();
+    expect(env.OPCHAIN_TOKEN_OVERRIDE).toBeUndefined();
+    expect(env.OPCHAIN_SECRET).toBeUndefined();
+    expect("UNDEFINED_VALUE" in env).toBe(false);
+  });
+});
 
 describe("buildTokenChildEnv", () => {
   test("injects the resolved service-account token and removes ambient token overrides", () => {

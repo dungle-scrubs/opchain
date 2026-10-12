@@ -33,8 +33,11 @@ execution vars (`PATH`, `HOME`, `SHELL`, etc.) but never ambient opchain token
 values.
 
 Delegated `op` processes receive the resolved token and a minimal set of
-inherited environment variables. They do not receive `OPCHAIN_TOKEN_OVERRIDE`
-or any pre-existing `OP_SERVICE_ACCOUNT_TOKEN` from the parent.
+inherited environment variables. `op run` is the exception: the program it
+starts needs your environment, so `op run` receives every variable except those
+whose names start with `OP_` or `OPCHAIN_`. No `op` process receives
+`OPCHAIN_TOKEN_OVERRIDE` or any pre-existing `OP_SERVICE_ACCOUNT_TOKEN` from the
+parent.
 
 Configuration lives in `~/.config/opchain/config.toml`. Each identity defines
 named profiles, an access mode, and an optional list of the vaults it is
