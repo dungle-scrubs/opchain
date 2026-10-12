@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -35,6 +36,67 @@ jobs:
           bun build src/oprun.ts --compile \
             --target=bun-darwin-arm64 --outfile dist/oprun
 
+      - name: Import signing certificate
+        env:
+          MACOS_SIGNING_CERT_P12_BASE64: ${{ secrets.MACOS_SIGNING_CERT_P12_BASE64 }}
+          MACOS_SIGNING_CERT_PASSWORD: ${{ secrets.MACOS_SIGNING_CERT_PASSWORD }}
+        run: |
+          if [ -z "$MACOS_SIGNING_CERT_P12_BASE64" ]; then
+            echo "::error::MACOS_SIGNING_CERT_P12_BASE64 is not set"; exit 1
+          fi
+          if [ -z "$MACOS_SIGNING_CERT_PASSWORD" ]; then
+            echo "::error::MACOS_SIGNING_CERT_PASSWORD is not set"; exit 1
+          fi
+          keychain_path="$RUNNER_TEMP/signing.keychain-db"
+          keychain_password="$(openssl rand -base64 32)"
+          cert_path="$RUNNER_TEMP/signing-cert.p12"
+          printf '%s' "$MACOS_SIGNING_CERT_P12_BASE64" | base64 --decode -o "$cert_path"
+          security create-keychain -p "$keychain_password" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$keychain_password" "$keychain_path"
+          security import "$cert_path" -P "$MACOS_SIGNING_CERT_PASSWORD" -t cert -f pkcs12 -k "$keychain_path" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -k "$keychain_password" "$keychain_path" >/dev/null
+          security list-keychains -d user -s "$keychain_path"
+          rm -f "$cert_path"
+
+      - name: Sign binaries
+        env:
+          MACOS_SIGNING_IDENTITY: ${{ vars.MACOS_SIGNING_IDENTITY }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+        run: |
+          if [ -z "$MACOS_SIGNING_IDENTITY" ]; then
+            echo "::error::MACOS_SIGNING_IDENTITY is not set"; exit 1
+          fi
+          if [ -z "$APPLE_TEAM_ID" ]; then
+            echo "::error::APPLE_TEAM_ID is not set"; exit 1
+          fi
+          scripts/sign-macos.sh --identity "$MACOS_SIGNING_IDENTITY" --team-id "$APPLE_TEAM_ID" --timestamp dist/opchain dist/oprun
+
+      - name: Smoke-test signed binaries
+        run: |
+          dist/opchain --help >/dev/null
+          dist/oprun --help >/dev/null
+
+      - name: Notarize binaries
+        env:
+          APPLE_API_KEY_P8_BASE64: ${{ secrets.APPLE_API_KEY_P8_BASE64 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+        run: |
+          if [ -z "$APPLE_API_KEY_P8_BASE64" ]; then
+            echo "::error::APPLE_API_KEY_P8_BASE64 is not set"; exit 1
+          fi
+          if [ -z "$APPLE_API_KEY_ID" ]; then
+            echo "::error::APPLE_API_KEY_ID is not set"; exit 1
+          fi
+          if [ -z "$APPLE_API_ISSUER_ID" ]; then
+            echo "::error::APPLE_API_ISSUER_ID is not set"; exit 1
+          fi
+          key_path="$RUNNER_TEMP/notary-api-key.p8"
+          printf '%s' "$APPLE_API_KEY_P8_BASE64" | base64 --decode -o "$key_path"
+          APPLE_API_KEY_PATH="$key_path" scripts/notarize-macos.sh dist/opchain dist/oprun
+          rm -f "$key_path"
+
       - name: Package binaries
         run: |
           version="${GITHUB_REF_NAME}"
@@ -45,6 +107,7 @@ jobs:
           done
 
       - name: Create GitHub Release
+        if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -53,3 +116,16 @@ jobs:
             --generate-notes \
             *-macos-arm64.tar.gz \
             *-macos-arm64.tar.gz.sha256
+
+      - name: Upload dry-run artifacts
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: opchain-dry-run
+          path: "*-macos-arm64.tar.gz*"
+
+      - name: Remove signing material
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/signing.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/signing-cert.p12" "$RUNNER_TEMP/notary-api-key.p8"
