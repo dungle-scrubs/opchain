@@ -10,7 +10,6 @@ type TestIdentityConfig = {
 };
 
 type TestConfigDefaults = {
-  readonly enforceVaultAllowlist: boolean;
   readonly expiresThresholdDays: number;
   readonly projectsDir: string;
 };
@@ -41,7 +40,6 @@ type HumanAndPrimaryOptions = {
 };
 
 const DEFAULTS: TestConfigDefaults = {
-  enforceVaultAllowlist: true,
   expiresThresholdDays: 14,
   projectsDir: "/Users/example/dev",
 };
@@ -61,7 +59,6 @@ export function renderOpchainConfig(definition: TestConfigDefinition): string {
     "[defaults]",
     `projects_dir = "${defaults.projectsDir}"`,
     `expires_threshold_days = ${defaults.expiresThresholdDays}`,
-    `enforce_vault_allowlist = ${String(defaults.enforceVaultAllowlist)}`,
   ];
 
   for (const [identityName, identity] of Object.entries(

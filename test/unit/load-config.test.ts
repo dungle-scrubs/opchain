@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { loadConfig } from "../../src/config/load-config.ts";
 
 describe("loadConfig", () => {
-  test("loads a valid config file into typed domain data", async () => {
+  test("loads a config that contains the removed enforce_vault_allowlist option", async () => {
     const directoryPath = mkdtempSync(join(tmpdir(), "opchain-config-"));
     const configPath = join(directoryPath, "config.toml");
 
@@ -47,6 +47,7 @@ describe("loadConfig", () => {
       "Personal",
       "Services",
     ]);
+    expect("enforceVaultAllowlist" in result.value.defaults).toBe(false);
   });
 
   test("expands home-relative projects_dir values", async () => {
@@ -59,7 +60,6 @@ describe("loadConfig", () => {
         "[defaults]",
         'projects_dir = "~/dev"',
         "expires_threshold_days = 14",
-        "enforce_vault_allowlist = true",
         "",
         "[identities.primary]",
         'default_mode = "auto"',
@@ -93,7 +93,6 @@ describe("loadConfig", () => {
         "[defaults]",
         'projects_dir = "/Users/example/dev"',
         "expires_threshold_days = 14",
-        "enforce_vault_allowlist = true",
         "",
         "[identities.primary]",
         'default_mode = "auto"',
@@ -126,7 +125,6 @@ describe("loadConfig", () => {
         "[defaults]",
         'projects_dir = "/Users/example/dev"',
         "expires_threshold_days = 14",
-        "enforce_vault_allowlist = true",
         "",
         '[identities."../pwn"]',
         'default_mode = "default"',

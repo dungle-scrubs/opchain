@@ -41,7 +41,7 @@ describe("doctor", () => {
     expect(result.stdout).toContain("human");
     expect(result.stdout).toContain("profiles: default");
     expect(result.stdout).toContain(
-      "Configured vaults are a local allowlist, not the primary security boundary.",
+      "Configured vaults record intent only; opchain does not enforce them.",
     );
     expect(result.stderr).toBe("");
   });

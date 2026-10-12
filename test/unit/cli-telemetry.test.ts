@@ -19,7 +19,6 @@ import { createTelemetryEvent } from "../../src/telemetry/event.ts";
 function createConfig(): Config {
   return {
     defaults: {
-      enforceVaultAllowlist: true,
       expiresThresholdDays: 14,
       projectsDir: "/Users/example/dev",
     },

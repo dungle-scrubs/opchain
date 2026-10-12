@@ -197,12 +197,11 @@ Tokens are resolved through `/usr/bin/security find-generic-password` against
 the macOS Keychain, or from the `OPCHAIN_TOKEN_OVERRIDE` env var when
 `--allow-env-token` is explicitly passed.
 
-### Config allowlists
+### Configured vault lists
 
-Configured vault lists are local policy hints and guardrails.
-
-They may narrow expected behavior, but they do not expand real 1Password
-permissions and they are not the primary boundary.
+The per-identity vaults list in config.toml records which vaults an identity
+is meant to use. opchain shows it in identity list and does not enforce it.
+The boundary is the 1Password service-account token scope.
 
 ## Human and agent guidance
 

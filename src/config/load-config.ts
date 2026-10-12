@@ -11,7 +11,6 @@ const ACCESS_MODES = ["auto", "default"] as const;
 type AccessMode = (typeof ACCESS_MODES)[number];
 
 type ConfigDefaults = {
-  readonly enforceVaultAllowlist: boolean;
   readonly expiresThresholdDays: number;
   readonly projectsDir: string;
 };
@@ -97,11 +96,6 @@ function parseDefaults(
   const defaults = readRecord(document[key], key);
 
   return {
-    enforceVaultAllowlist: readBoolean(
-      defaults,
-      "enforce_vault_allowlist",
-      "defaults.enforce_vault_allowlist",
-    ),
     expiresThresholdDays: readPositiveInteger(
       defaults,
       "expires_threshold_days",
@@ -254,28 +248,6 @@ function readString(
 
   if (typeof value !== "string" || value.length === 0) {
     throw new ConfigError(`${path} must be a non-empty string.`);
-  }
-
-  return value;
-}
-
-/**
- * Reads a required boolean field.
- *
- * @param record - Source object.
- * @param key - Property name.
- * @param path - Fully qualified field path for error messages.
- * @returns {boolean} Boolean value.
- */
-function readBoolean(
-  record: Record<string, unknown>,
-  key: string,
-  path: string = key,
-): boolean {
-  const value = record[key];
-
-  if (typeof value !== "boolean") {
-    throw new ConfigError(`${path} must be a boolean.`);
   }
 
   return value;

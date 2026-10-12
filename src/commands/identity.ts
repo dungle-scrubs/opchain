@@ -32,7 +32,7 @@ function renderDoctorOutput(config: Config, configPath: string): string {
     "Identities:",
     ...identityLines,
     "",
-    "Configured vaults are a local allowlist, not the primary security boundary.",
+    "Configured vaults record intent only; opchain does not enforce them.",
   ].join("\n");
 }
 

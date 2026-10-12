@@ -35,7 +35,8 @@ inherited environment variables. They do not receive `OPCHAIN_TOKEN_OVERRIDE`
 or any pre-existing `OP_SERVICE_ACCOUNT_TOKEN` from the parent.
 
 Configuration lives in `~/.config/opchain/config.toml`. Each identity defines
-named profiles, an access mode, and an optional vault allowlist. Profiles map
+named profiles, an access mode, and an optional list of the vaults it is
+meant to use (not enforced). Profiles map
 to Keychain account names. A typical identity has `read` and `write` profiles
 backed by separate service-account tokens.
 
@@ -74,7 +75,6 @@ Create `~/.config/opchain/config.toml`:
 [defaults]
 projects_dir = "~/dev"
 expires_threshold_days = 14
-enforce_vault_allowlist = true
 
 [identities.primary]
 default_mode = "auto"

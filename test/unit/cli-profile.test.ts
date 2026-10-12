@@ -15,7 +15,6 @@ import {
 function createConfig(): Config {
   return {
     defaults: {
-      enforceVaultAllowlist: true,
       expiresThresholdDays: 14,
       projectsDir: "/Users/example/dev",
     },
