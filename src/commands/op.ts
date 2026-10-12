@@ -47,14 +47,15 @@ type OpChildResult =
  *
  * @param opArgs - Arguments passed after the `op` token.
  * @param token - Service-account token injected into the child process.
+ * @param timeoutMs - Kill deadline, or `null` for no deadline.
  * @returns {Promise<OpChildResult>} Child exit data or spawn error.
  */
 function runOpChild(
   opArgs: readonly string[],
   token: string,
+  timeoutMs: number | null,
 ): Promise<OpChildResult> {
   return new Promise((resolve) => {
-    const timeoutMs = resolveOpTimeoutMs();
     const child = spawn(resolveOpPath(), opArgs, {
       env: buildTokenChildEnv(token),
       stdio: ["inherit", "pipe", "pipe"],
@@ -65,29 +66,35 @@ function runOpChild(
     let timedOut = false;
     let killTimer: ReturnType<typeof setTimeout> | undefined;
     const clearTimers = (): void => {
-      clearTimeout(timeout);
+      if (timeout !== undefined) {
+        clearTimeout(timeout);
+      }
       if (killTimer !== undefined) {
         clearTimeout(killTimer);
       }
     };
-    const timeout = setTimeout(() => {
-      if (settled) {
-        return;
-      }
+    const timeout =
+      timeoutMs === null
+        ? undefined
+        : setTimeout(() => {
+            if (settled) {
+              return;
+            }
 
-      timedOut = true;
-      child.kill("SIGTERM");
-      // A SIGTERM-ignoring child still holds the service-account token, so
-      // escalate to an unblockable SIGKILL to guarantee the process exits and
-      // the result promise settles via the close handler below.
-      killTimer = setTimeout(() => {
-        if (settled) {
-          return;
-        }
+            timedOut = true;
+            child.kill("SIGTERM");
+            // A SIGTERM-ignoring child still holds the service-account
+            // token, so escalate to an unblockable SIGKILL to guarantee the
+            // process exits and the result promise settles via the close
+            // handler below.
+            killTimer = setTimeout(() => {
+              if (settled) {
+                return;
+              }
 
-        child.kill("SIGKILL");
-      }, OP_SIGKILL_GRACE_MS);
-    }, timeoutMs);
+              child.kill("SIGKILL");
+            }, OP_SIGKILL_GRACE_MS);
+          }, timeoutMs);
 
     child.stdout.on("data", (chunk: Buffer) => {
       stdoutBytes += chunk.length;
@@ -275,7 +282,10 @@ export async function runIdentityOp(
     }),
   );
 
-  const opResult = await runOpChild(opArgs, token);
+  // `op run` lives as long as the program it wraps, so a deadline would cap
+  // that program's runtime rather than catch a stuck `op`.
+  const timeoutMs = commandName === "run" ? null : resolveOpTimeoutMs();
+  const opResult = await runOpChild(opArgs, token, timeoutMs);
 
   if (!opResult.ok) {
     return commandFailure(`${opResult.error.message}\n`);
