@@ -12,7 +12,10 @@ concurrency:
 
 jobs:
   test:
-    runs-on: macos-latest
+    # The checked steps are platform-neutral (bun lint/typecheck/test/build);
+    # the build cross-compiles the darwin-arm64 binaries, so Linux is fine.
+    # GitHub-hosted macOS runners bill at 10x the Linux rate - see ticket #38.
+    runs-on: ubuntu-latest
 
     steps:
       - name: Check out repository

@@ -16,7 +16,10 @@ concurrency:
 
 jobs:
   release:
-    runs-on: macos-latest
+    # Runs on the self-hosted runner on mini: signing uses mini's login
+    # keychain (no cert import needed), notarization still reads the Apple
+    # API secrets, and self-hosted minutes are free (ticket #38).
+    runs-on: [self-hosted, macos]
 
     steps:
       - name: Check out repository
@@ -45,29 +48,6 @@ jobs:
             --target=bun-darwin-arm64 --outfile dist/opchain
           bun build src/oprun.ts --compile \
             --target=bun-darwin-arm64 --outfile dist/oprun
-
-      - name: Import signing certificate
-        env:
-          MACOS_SIGNING_CERT_P12_BASE64: ${{ secrets.MACOS_SIGNING_CERT_P12_BASE64 }}
-          MACOS_SIGNING_CERT_PASSWORD: ${{ secrets.MACOS_SIGNING_CERT_PASSWORD }}
-        run: |
-          if [ -z "$MACOS_SIGNING_CERT_P12_BASE64" ]; then
-            echo "::error::MACOS_SIGNING_CERT_P12_BASE64 is not set"; exit 1
-          fi
-          if [ -z "$MACOS_SIGNING_CERT_PASSWORD" ]; then
-            echo "::error::MACOS_SIGNING_CERT_PASSWORD is not set"; exit 1
-          fi
-          keychain_path="$RUNNER_TEMP/signing.keychain-db"
-          keychain_password="$(openssl rand -base64 32)"
-          cert_path="$RUNNER_TEMP/signing-cert.p12"
-          printf '%s' "$MACOS_SIGNING_CERT_P12_BASE64" | base64 --decode -o "$cert_path"
-          security create-keychain -p "$keychain_password" "$keychain_path"
-          security set-keychain-settings -lut 21600 "$keychain_path"
-          security unlock-keychain -p "$keychain_password" "$keychain_path"
-          security import "$cert_path" -P "$MACOS_SIGNING_CERT_PASSWORD" -t cert -f pkcs12 -k "$keychain_path" -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple: -k "$keychain_password" "$keychain_path" >/dev/null
-          security list-keychains -d user -s "$keychain_path"
-          rm -f "$cert_path"
 
       - name: Sign binaries
         env:
@@ -177,8 +157,6 @@ jobs:
           name: opchain-dry-run
           path: "*-macos-arm64.tar.gz*"
 
-      - name: Remove signing material
+      - name: Remove notary key material
         if: always()
-        run: |
-          security delete-keychain "$RUNNER_TEMP/signing.keychain-db" 2>/dev/null || true
-          rm -f "$RUNNER_TEMP/signing-cert.p12" "$RUNNER_TEMP/notary-api-key.p8"
+        run: rm -f "$RUNNER_TEMP/notary-api-key.p8"
