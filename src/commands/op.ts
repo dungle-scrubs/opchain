@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { constants as osConstants } from "node:os";
 
 import { createTelemetryEvent } from "../telemetry/event.ts";
 import {
@@ -31,6 +32,17 @@ import { resolveIdentityContext } from "../cli/token-context.ts";
  */
 const OP_SIGKILL_GRACE_MS = 2_000;
 
+/**
+ * Stop signals opchain forwards to the delegated `op` child while it runs,
+ * so Ctrl+C or a hangup reaches `op` and its wrapped program instead of
+ * killing opchain and orphaning them.
+ */
+const STOP_SIGNALS: readonly NodeJS.Signals[] = [
+  "SIGTERM",
+  "SIGINT",
+  "SIGHUP",
+];
+
 type OpChildResult =
   | {
       readonly error: Error;
@@ -43,6 +55,19 @@ type OpChildResult =
       readonly stdoutBytes: number;
       readonly timedOut: boolean;
     };
+
+/**
+ * Maps a signal name to its operating-system number.
+ *
+ * @param signal - Signal name reported by a child's close event.
+ * @returns {number} Signal number, or 0 for a name the table lacks.
+ */
+function signalNumber(signal: NodeJS.Signals): number {
+  const number = (
+    osConstants.signals as Record<string, number | undefined>
+  )[signal];
+  return number ?? 0;
+}
 
 /**
  * Runs `op` while streaming output through and retaining only byte counts.
@@ -67,7 +92,20 @@ function runOpChild(
     let settled = false;
     let timedOut = false;
     let killTimer: ReturnType<typeof setTimeout> | undefined;
-    const clearTimers = (): void => {
+    // Stop signals are forwarded to the child, and opchain keeps running
+    // until the child ends, so it can report the child's status.
+    const signalForwards = new Map<NodeJS.Signals, () => void>();
+    for (const stopSignal of STOP_SIGNALS) {
+      const forward = (): void => {
+        child.kill(stopSignal);
+      };
+      process.on(stopSignal, forward);
+      signalForwards.set(stopSignal, forward);
+    }
+    const teardown = (): void => {
+      for (const [stopSignal, forward] of signalForwards) {
+        process.removeListener(stopSignal, forward);
+      }
       if (timeout !== undefined) {
         clearTimeout(timeout);
       }
@@ -114,19 +152,22 @@ function runOpChild(
       }
 
       settled = true;
-      clearTimers();
+      teardown();
       resolve({ error, ok: false });
     });
 
-    child.on("close", (code) => {
+    child.on("close", (code, signal) => {
       if (settled) {
         return;
       }
 
       settled = true;
-      clearTimers();
+      teardown();
       resolve({
-        exitCode: code ?? 1,
+        // A child ended by a signal reports the shell convention 128 + its
+        // operating-system signal number, so callers see why `op` died.
+        exitCode:
+          code ?? (signal !== null ? 128 + signalNumber(signal) : 1),
         ok: true,
         stderrBytes,
         stdoutBytes,
