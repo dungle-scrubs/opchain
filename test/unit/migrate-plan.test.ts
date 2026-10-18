@@ -27,6 +27,7 @@ function createCliOptions(): CliOptions {
     debugFormat: "text",
     explicitProfile: undefined,
     help: false,
+    valueFd: undefined,
   };
 }
 

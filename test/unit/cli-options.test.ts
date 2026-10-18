@@ -327,4 +327,101 @@ describe("parseCliOptions", () => {
       parseError: "Missing value for --profile.",
     });
   });
+
+  test("parses --value-fd between identity and op as an op-execution value flag", () => {
+    const result = parseCliOptions([
+      "human",
+      "--read",
+      "--value-fd",
+      "3",
+      "op",
+      "read",
+      "op://Vault/Item/field",
+    ]);
+
+    expect(result.valueFd).toBe("3");
+    expect(result.accessOverride).toBe("read");
+    expect(result.commandArgs).toEqual([
+      "human",
+      "op",
+      "read",
+      "op://Vault/Item/field",
+    ]);
+  });
+
+  test("parses --value-fd before the identity", () => {
+    const result = parseCliOptions([
+      "--read",
+      "--value-fd",
+      "3",
+      "human",
+      "op",
+      "read",
+      "op://Vault/Item/field",
+    ]);
+
+    expect(result.valueFd).toBe("3");
+    expect(result.accessOverride).toBe("read");
+    expect(result.commandArgs).toEqual([
+      "human",
+      "op",
+      "read",
+      "op://Vault/Item/field",
+    ]);
+  });
+
+  test("parses the attached --value-fd=3 spelling in both positions", () => {
+    const between = parseCliOptions([
+      "human",
+      "--read",
+      "--value-fd=3",
+      "op",
+      "read",
+      "op://Vault/Item/field",
+    ]);
+    expect(between.valueFd).toBe("3");
+
+    const before = parseCliOptions([
+      "--value-fd=3",
+      "--read",
+      "human",
+      "op",
+      "read",
+      "op://Vault/Item/field",
+    ]);
+    expect(before.valueFd).toBe("3");
+    expect(before.commandArgs).toEqual([
+      "human",
+      "op",
+      "read",
+      "op://Vault/Item/field",
+    ]);
+  });
+
+  test("keeps a non-integer fd value for the relay descriptor check to refuse", () => {
+    const result = parseCliOptions([
+      "human",
+      "--read",
+      "--value-fd=abc",
+      "op",
+      "read",
+      "op://Vault/Item/field",
+    ]);
+
+    expect(result.valueFd).toBe("abc");
+    expect(result.parseError).toBeUndefined();
+  });
+
+  test("fails closed when --value-fd has no value", () => {
+    const result = parseCliOptions([
+      "human",
+      "--read",
+      "--value-fd",
+      "op",
+      "read",
+      "op://Vault/Item/field",
+    ]);
+
+    expect(result.parseError).toBe("Missing value for --value-fd.");
+  });
 });

@@ -10,7 +10,7 @@ const OP_BOOLEAN_FLAGS = new Set([
   "--allow-reveal",
   "--pass-token",
 ]);
-const OP_VALUE_FLAGS = new Set(["--profile"]);
+const OP_VALUE_FLAGS = new Set(["--profile", "--value-fd"]);
 
 /**
  * Every op-execution flag name, for messages that name a misplaced flag.
@@ -37,6 +37,7 @@ export type CliOptions = {
   readonly explicitProfile: string | undefined;
   readonly help: boolean;
   readonly parseError?: string;
+  readonly valueFd?: string;
 };
 
 type ParsedIdentityOpCommand = {
@@ -47,6 +48,7 @@ type ParsedIdentityOpCommand = {
   readonly commandArgs: readonly string[];
   readonly explicitProfile: string | undefined;
   readonly parseError?: string;
+  readonly valueFd: string | undefined;
 };
 
 /**
@@ -86,6 +88,7 @@ function buildIdentityOpCandidate(
       commandArgs: [identity, "op", ...opArgs],
       explicitProfile: undefined,
       parseError: parsedFlags.error.message,
+      valueFd: undefined,
     };
   }
 
@@ -105,6 +108,7 @@ function buildIdentityOpCandidate(
       commandArgs: [identity, "op", ...opArgs],
       explicitProfile: parsedFlags.valueFlags.get("--profile"),
       parseError: "Cannot pass both --read and --write.",
+      valueFd: parsedFlags.valueFlags.get("--value-fd"),
     };
   }
 
@@ -119,6 +123,7 @@ function buildIdentityOpCandidate(
     passToken: parsedFlags.booleanFlags.has("--pass-token"),
     commandArgs: [identity, "op", ...opArgs],
     explicitProfile: parsedFlags.valueFlags.get("--profile"),
+    valueFd: parsedFlags.valueFlags.get("--value-fd"),
   };
 }
 
@@ -200,17 +205,44 @@ function normalizeDebugFormat(input: string | undefined): DebugFormat {
 }
 
 /**
+ * Splits attached `--value-fd=<value>` spellings into separate tokens.
+ *
+ * The shared flag parser handles only `--flag value` spellings for
+ * op-execution flags; the relay route additionally documents the attached
+ * `--value-fd=3` form, so it is normalized before envelope parsing. Any
+ * resulting value, integer or not, reaches the relay descriptor checks,
+ * which refuse non-integers fail-closed.
+ *
+ * @param argv - User-provided CLI arguments.
+ * @returns {readonly string[]} Arguments with attached --value-fd spellings split.
+ */
+function expandAttachedValueFd(argv: readonly string[]): readonly string[] {
+  const expanded: string[] = [];
+  for (const token of argv) {
+    if (token.startsWith("--value-fd=")) {
+      expanded.push("--value-fd", token.slice("--value-fd=".length));
+      continue;
+    }
+
+    expanded.push(token);
+  }
+
+  return expanded;
+}
+
+/**
  * Parses the current CLI options and strips handled global flags.
  *
  * @param argv - User-provided CLI arguments.
  * @returns {CliOptions} Parsed CLI options.
  */
 export function parseCliOptions(argv: readonly string[]): CliOptions {
-  const opEnvelopeIndex = findOpEnvelopeIndex(argv);
+  const normalizedArgv = expandAttachedValueFd(argv);
+  const opEnvelopeIndex = findOpEnvelopeIndex(normalizedArgv);
   const rootFlagTokens =
-    opEnvelopeIndex === -1 ? argv : argv.slice(0, opEnvelopeIndex);
+    opEnvelopeIndex === -1 ? normalizedArgv : normalizedArgv.slice(0, opEnvelopeIndex);
   const opEnvelopeTokens =
-    opEnvelopeIndex === -1 ? [] : argv.slice(opEnvelopeIndex);
+    opEnvelopeIndex === -1 ? [] : normalizedArgv.slice(opEnvelopeIndex);
 
   const parsedRootFlags = parseFlagArguments(rootFlagTokens, {
     booleanFlags: ROOT_BOOLEAN_FLAGS,
@@ -229,6 +261,7 @@ export function parseCliOptions(argv: readonly string[]): CliOptions {
       explicitProfile: undefined,
       help: false,
       parseError: parsedRootFlags.error.message,
+      valueFd: undefined,
     };
   }
 
@@ -254,6 +287,7 @@ export function parseCliOptions(argv: readonly string[]): CliOptions {
       argv.length === 0 ||
       parsedRootFlags.booleanFlags.has("--help") ||
       parsedRootFlags.booleanFlags.has("-h"),
+    valueFd: parsedIdentityOpCommand?.valueFd,
     ...(parsedIdentityOpCommand?.parseError === undefined
       ? {}
       : { parseError: parsedIdentityOpCommand.parseError }),

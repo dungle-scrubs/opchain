@@ -19,6 +19,7 @@ export function createCliOptions(
     debugFormat: "text",
     explicitProfile: undefined,
     help: false,
+    valueFd: undefined,
     ...overrides,
   };
 }
