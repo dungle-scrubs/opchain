@@ -1,0 +1,135 @@
+#!/usr/bin/env bun
+// Fake `op` for stop-signal forwarding tests, selected through
+// OPCHAIN_OP_PATH. Never the real op binary.
+//
+// A shell script cannot carry this fixture: bash swallows a trapped SIGINT
+// while it waits inside `sleep` or `wait`, and a backgrounded sleep that
+// outlives the script holds opchain's output pipes open. Bun handles signals
+// on its own event loop and holds no stray children, so this file is the
+// fixture's own small program instead.
+//
+// Modes, chosen with OPCHAIN_TEST_OP_SIGNALS_MODE:
+//   wrap   - `run -- <program...>`: start the program, forward
+//            SIGTERM/SIGINT/SIGHUP to it, keep waiting, and exit with the
+//            program's exit status.
+//   hold   - ignore the arguments and sleep in-process, for a command that
+//            never finishes on its own; with no signal handler it dies from
+//            any forwarded stop signal.
+//   ignore - trap SIGTERM/SIGINT/SIGHUP without acting, so only the
+//            timeout's SIGKILL escalation can end it.
+//
+// Readiness files under OPCHAIN_TEST_OP_SIGNALS_DIR:
+//   program-ready - written by the wrapped program once its signal handler is
+//                   armed (the program's own script does this)
+//   op-ready      - `op=<pid>` and `program=<pid>`, written only once the
+//                   program is ready (`-` when there is no program)
+
+import { spawn } from "node:child_process";
+import { existsSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+
+const STOP_SIGNALS = ["SIGTERM", "SIGINT", "SIGHUP"] as const;
+
+const mode = process.env.OPCHAIN_TEST_OP_SIGNALS_MODE ?? "wrap";
+const dir = process.env.OPCHAIN_TEST_OP_SIGNALS_DIR ?? "";
+
+/**
+ * Announces this fake op's readiness, with its program's pid when it has one.
+ *
+ * @param programPid - Pid of the wrapped program, or null without one.
+ */
+function writeOpReady(programPid: number | null): void {
+  if (dir !== "") {
+    writeFileSync(
+      join(dir, "op-ready"),
+      `op=${process.pid}\nprogram=${programPid ?? "-"}\n`,
+    );
+  }
+}
+
+/**
+ * Sleeps inside this process, holding no child that could hold pipes open.
+ *
+ * @param ms - Time to sleep in milliseconds.
+ */
+function sleepHere(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+/**
+ * Waits until the wrapped program announces itself, bounded in time.
+ */
+async function waitForProgramReady(): Promise<void> {
+  if (dir === "") {
+    return;
+  }
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    if (existsSync(join(dir, "program-ready"))) {
+      return;
+    }
+    await sleepHere(50);
+  }
+}
+
+/**
+ * Runs wrap mode: forward stop signals to the program and exit with its
+ * status.
+ */
+async function runWrapMode(args: readonly string[]): Promise<void> {
+  const separator = args.indexOf("--");
+  const program = separator === -1 ? [] : args.slice(separator + 1);
+  if (program.length === 0) {
+    console.error("fake op signals: missing program after --");
+    process.exit(2);
+  }
+
+  const child = spawn(program[0], program.slice(1), {
+    stdio: ["inherit", "inherit", "inherit"],
+  });
+  for (const stopSignal of STOP_SIGNALS) {
+    process.on(stopSignal, () => {
+      child.kill(stopSignal);
+    });
+  }
+
+  await waitForProgramReady();
+  writeOpReady(child.pid ?? null);
+
+  const status = await new Promise<number | null>((resolve) => {
+    child.on("close", (code) => {
+      resolve(code);
+    });
+    child.on("error", () => {
+      resolve(1);
+    });
+  });
+  process.exit(status ?? 1);
+}
+
+switch (mode) {
+  case "wrap": {
+    await runWrapMode(process.argv.slice(2));
+    break;
+  }
+  case "hold": {
+    writeOpReady(null);
+    await sleepHere(60_000);
+    break;
+  }
+  case "ignore": {
+    for (const stopSignal of STOP_SIGNALS) {
+      process.on(stopSignal, () => {
+        // Swallow the signal; only SIGKILL ends this process.
+      });
+    }
+    writeOpReady(null);
+    await sleepHere(60_000);
+    break;
+  }
+  default: {
+    console.error(`fake op signals: unknown mode ${mode}`);
+    process.exit(3);
+  }
+}

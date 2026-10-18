@@ -176,6 +176,12 @@ needs the token: pass `--pass-token` before `op`
 (`opchain primary --read --pass-token op run --env-file .env.op -- <program>`).
 `op run` needs `--` before the program.
 
+While `op` runs, opchain forwards SIGTERM, SIGINT, and SIGHUP to the `op`
+process and waits for it to end, so Ctrl+C stops the delegated command instead
+of orphaning it. opchain then exits with the `op` process's status: an exit
+code passes through, and `op` ended by a signal exits 128 plus the signal
+number.
+
 ### `.env.op` validation
 
 ```bash
