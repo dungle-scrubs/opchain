@@ -8,11 +8,14 @@ function readDoc(fileName: string): string {
 
 describe("documentation smoke checks", () => {
   test("README states the core value and contains no V2 branding", () => {
-    const readme = readDoc("README.md");
+    const readme = readDoc("README.md").replace(/\s+/g, " ");
 
     expect(readme).not.toContain("opchainV2");
-    expect(readme).toContain("Apple Keychain");
-    expect(readme).toContain("never sees the token value");
+    expect(readme).toContain(
+      "Run programs with 1Password secrets, without fingerprint prompts.",
+    );
+    expect(readme).toContain("macOS Keychain");
+    expect(readme).toContain("without inheriting the service-account token");
   });
 
   test("README provides install, config, and run steps in quick start", () => {
