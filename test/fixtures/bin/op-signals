@@ -121,7 +121,7 @@ switch (mode) {
   case "ignore": {
     for (const stopSignal of STOP_SIGNALS) {
       process.on(stopSignal, () => {
-        // Swallow the signal; only SIGKILL ends this process.
+        writeFileSync(join(dir, `op-${stopSignal}-received`), "ignored");
       });
     }
     writeOpReady(null);

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -8,12 +8,6 @@ import { writeAutoReadWriteConfig } from "../helpers/write-opchain-config.ts";
 
 const OP_SIGNALS_FIXTURE = join(process.cwd(), "test/fixtures/bin/op-signals");
 const SECURITY_FIXTURE = join(process.cwd(), "test/fixtures/bin/security");
-
-/** Milliseconds the wrapped program keeps running after its trap fires. */
-const PROGRAM_EXIT_DELAY_MS = 500;
-
-/** Checkpoint after signaling, still inside the program's delayed exit. */
-const STILL_WAITING_CHECK_MS = 100;
 
 type ExitFacts = {
   readonly status: number | null;
@@ -209,8 +203,8 @@ function spawnOpchain(
 
 /**
  * Builds the wrapped program's `bun -e` script: it arms a handler for
- * `signal`, announces readiness, waits, and only after receiving the signal
- * delays its nonzero exit.
+ * `signal`, announces readiness, and waits after receipt until the test
+ * releases its nonzero exit.
  *
  * A shell program cannot do this: bash swallows a trapped SIGINT while it
  * waits inside `sleep` or `wait`.
@@ -229,11 +223,13 @@ function buildTrappingProgramArgs(
     'const fs = require("node:fs");',
     'const path = require("node:path");',
     "const dir = process.env.OPCHAIN_TEST_OP_SIGNALS_DIR;",
-    'fs.writeFileSync(path.join(dir, "program-ready"), String(process.pid));',
     `process.on("${signal}", () => {`,
     `  fs.writeFileSync(path.join(dir, "${receiptName}"), "x");`,
-    `  setTimeout(() => process.exit(${exitCode}), ${PROGRAM_EXIT_DELAY_MS});`,
+    "  setInterval(() => {",
+    `    if (fs.existsSync(path.join(dir, "release-program"))) process.exit(${exitCode});`,
+    "  }, 25);",
     "});",
+    'fs.writeFileSync(path.join(dir, "program-ready"), String(process.pid));',
     "setTimeout(() => process.exit(1), 60000);",
     "",
   ].join("\n");
@@ -242,8 +238,8 @@ function buildTrappingProgramArgs(
 
 /**
  * Runs one end-to-end forwarding case: signal opchain, prove the wrapped
- * program received the forwarded signal, and check opchain waited for the
- * program's delayed nonzero exit.
+ * program received the forwarded signal, and check opchain waits until the
+ * test releases the program's nonzero exit.
  *
  * @param signal - Signal sent to the opchain pid.
  * @param receiptName - File the program's trap writes to prove receipt.
@@ -267,16 +263,16 @@ async function expectForwardedToProgram(
       throw new Error("op-ready announced no program pid");
     }
 
+    const exited = waitForExit(proc, 10_000);
     process.kill(opchainPid, signal);
 
-    // The program is still inside its delayed exit here, so opchain has
-    // survived its own stop signal and is waiting for the child it forwarded
-    // to.
-    await sleep(STILL_WAITING_CHECK_MS);
+    await waitForFile(join(signalsDirectory, receiptName), 5_000);
     expect(proc.exitCode).toBeNull();
     expect(proc.signalCode).toBeNull();
+    expect(await isPidGone(programPid, 50)).toBe(false);
 
-    const exit = await waitForExit(proc, 10_000);
+    writeFileSync(join(signalsDirectory, "release-program"), "exit");
+    const exit = await exited;
     expect(exit.status).toBe(exitCode);
     expect(existsSync(join(signalsDirectory, receiptName))).toBe(true);
 
@@ -384,15 +380,18 @@ describe("op stop signals", () => {
       // SIGKILL it.
       const proc = spawnOpchain(["item", "list"], signalsDirectory, {
         OPCHAIN_TEST_OP_SIGNALS_MODE: "ignore",
-        OPCHAIN_OP_TIMEOUT_MS: "200",
+        OPCHAIN_OP_TIMEOUT_MS: "1000",
       });
       try {
+        const exited = waitForExit(proc, 15_000);
         const { opPid } = await readOpReady(signalsDirectory);
+        process.kill(requireOpchainPid(proc), "SIGINT");
+        await waitForFile(join(signalsDirectory, "op-SIGINT-received"), 5_000);
 
-        const exit = await waitForExit(proc, 15_000);
+        const exit = await exited;
         expect(exit.status).toBe(1);
         expect(exit.stderr).toContain(
-          "1Password CLI command timed out after 200ms",
+          "1Password CLI command timed out after 1000ms",
         );
         expect(await isPidGone(opPid, 2_000)).toBe(true);
       } finally {
