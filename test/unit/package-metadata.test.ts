@@ -48,9 +48,26 @@ describe("package metadata", () => {
       "dist/opchain",
       "dist/oprun",
       "README.md",
+      "docs/reference.md",
       "MIGRATION.md",
       "PACKAGING.md",
       "SECURITY.md",
     ]);
+  });
+
+  test("release content check matches the published file list", () => {
+    const packageJson = JSON.parse(
+      readFileSync(join(process.cwd(), "package.json"), "utf8"),
+    ) as PackageJson;
+    const workflow = readFileSync(
+      join(process.cwd(), ".github/workflows/release.yml"),
+      "utf8",
+    );
+    const expected = workflow.match(/expected="(LICENSE[^"\n]+)"/);
+
+    expect(expected).not.toBeNull();
+    expect(expected?.[1]?.trim().split(/\s+/)).toEqual(
+      [...(packageJson.files ?? []), "LICENSE", "package.json"].sort(),
+    );
   });
 });
