@@ -25,7 +25,7 @@
 //                   program is ready (`-` when there is no program)
 
 import { spawn } from "node:child_process";
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const STOP_SIGNALS = ["SIGTERM", "SIGINT", "SIGHUP"] as const;
@@ -41,9 +41,10 @@ const dir = process.env.OPCHAIN_TEST_OP_SIGNALS_DIR ?? "";
 function writeOpReady(programPid: number | null): void {
   if (dir !== "") {
     writeFileSync(
-      join(dir, "op-ready"),
+      join(dir, "op-ready.tmp"),
       `op=${process.pid}\nprogram=${programPid ?? "-"}\n`,
     );
+    renameSync(join(dir, "op-ready.tmp"), join(dir, "op-ready"));
   }
 }
 
