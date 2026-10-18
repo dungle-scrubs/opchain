@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 
 import { buildSanitizedEnv } from "../env/sanitize.ts";
 
@@ -89,6 +89,12 @@ function getErrorCode(error: Error): string | undefined {
 }
 
 /**
+ * Grace period after SIGTERM before escalating a stuck provider child to
+ * SIGKILL.
+ */
+const PROVIDER_SIGKILL_GRACE_MS = 2_000;
+
+/**
  * Runs one token backend command with consistent process handling.
  *
  * @param commandPath - Executable path or command name.
@@ -150,4 +156,127 @@ export function runTokenCommand(
     ok: true,
     stdout: commandResult.stdout,
   };
+}
+
+/**
+ * Runs one token backend command asynchronously under a caller-owned
+ * deadline.
+ *
+ * Unlike {@link runTokenCommand}, the event loop stays responsive: the
+ * child is killed when `timeoutMs` elapses, so a stalled provider is
+ * interrupted rather than blocking until `spawnSync` returns. The relay
+ * route uses this so its overall deadline covers token resolution.
+ *
+ * @param commandPath - Executable path or command name.
+ * @param args - Command arguments.
+ * @param options - Deadline timeout and optional stdin payload.
+ * @returns {Promise<TokenCommandResult>} Command stdout or typed failure.
+ */
+export function runTokenCommandAsync(
+  commandPath: string,
+  args: readonly string[],
+  options: { readonly input?: string; readonly timeoutMs: number },
+): Promise<TokenCommandResult> {
+  const maxBytes = resolveProviderStdoutMaxBytes();
+
+  return new Promise((resolve) => {
+    let child: ChildProcess;
+    try {
+      child = spawn(commandPath, args, {
+        env: buildProviderChildEnv(),
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+    } catch {
+      resolve({ error: new TokenCommandError("start"), ok: false });
+      return;
+    }
+
+    let stdout = "";
+    let stdoutBytes = 0;
+    let stdoutOverLimit = false;
+    let settled = false;
+    let timedOut = false;
+    let killTimer: ReturnType<typeof setTimeout> | undefined;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+
+    const finish = (result: TokenCommandResult): void => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      if (timeout !== undefined) {
+        clearTimeout(timeout);
+      }
+      if (killTimer !== undefined) {
+        clearTimeout(killTimer);
+      }
+
+      resolve(result);
+    };
+
+    timeout = setTimeout(() => {
+      if (settled) {
+        return;
+      }
+
+      timedOut = true;
+      child.kill("SIGTERM");
+      // A SIGTERM-ignoring provider still holds the relay deadline, so
+      // escalate to an unblockable SIGKILL.
+      killTimer = setTimeout(() => {
+        child.kill("SIGKILL");
+      }, PROVIDER_SIGKILL_GRACE_MS);
+    }, options.timeoutMs);
+
+    if (options.input !== undefined) {
+      child.stdin?.write(options.input);
+    }
+    child.stdin?.end();
+
+    child.stdout?.on("data", (chunk: Buffer) => {
+      stdoutBytes += chunk.length;
+      if (stdoutBytes > maxBytes) {
+        stdoutOverLimit = true;
+        child.kill("SIGKILL");
+        return;
+      }
+
+      stdout += chunk.toString("utf8");
+    });
+
+    child.stderr?.resume();
+
+    child.on("error", (error: Error) => {
+      void error;
+      finish({ error: new TokenCommandError("start"), ok: false });
+    });
+
+    child.on("close", (exitCode) => {
+      if (stdoutOverLimit) {
+        finish({ error: new TokenCommandError("stdout_limit"), ok: false });
+        return;
+      }
+
+      if (timedOut) {
+        finish({ error: new TokenCommandError("timeout"), ok: false });
+        return;
+      }
+
+      if (exitCode !== 0) {
+        finish({
+          error: new TokenCommandError("exit", exitCode ?? 1),
+          ok: false,
+        });
+        return;
+      }
+
+      if (Buffer.byteLength(stdout, "utf8") > maxBytes) {
+        finish({ error: new TokenCommandError("stdout_limit"), ok: false });
+        return;
+      }
+
+      finish({ ok: true, stdout });
+    });
+  });
 }
