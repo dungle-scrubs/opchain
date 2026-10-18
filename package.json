@@ -1,7 +1,7 @@
 {
   "name": "@dungle-scrubs/opchain",
   "version": "0.4.2",
-  "description": "macOS-first CLI for 1Password service-account workflows",
+  "description": "Run programs with 1Password secrets, without fingerprint prompts.",
   "license": "MIT",
   "type": "module",
   "repository": {
@@ -16,6 +16,7 @@
     "dist/opchain",
     "dist/oprun",
     "README.md",
+    "docs/reference.md",
     "MIGRATION.md",
     "PACKAGING.md",
     "SECURITY.md"

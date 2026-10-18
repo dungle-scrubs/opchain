@@ -1,78 +1,31 @@
 # opchain
 
-opchain stores 1Password service-account tokens in the Apple Keychain and
-injects them directly into `op` child processes. The parent shell environment
-- and anything reading it, including LLM agents - never sees the token value.
+Run programs with 1Password secrets, without fingerprint prompts.
 
-opchain also validates `.env.op` files so broken `op://` references don't ship,
-and tracks expiring 1Password items by vault and item UUID.
+With `oprun`, your programs get the 1Password item values referenced in `.env.op`,
+without inheriting the service-account token. Store that token in the macOS
+Keychain instead of exporting it in your shell. Your agents can launch programs
+without reading the token or asking for your fingerprint on every run.
 
-## What it does
+```console
+$ oprun sh -c 'test -z "$OP_SERVICE_ACCOUNT_TOKEN" && echo "Service token not inherited"'
+Service token not inherited
+```
 
-A token stored through opchain lives in the macOS Keychain. When you run a
-command, opchain pulls the token and passes it to `op` as
-`OP_SERVICE_ACCOUNT_TOKEN`. The token exists only in that child process.
-`env`, `ps`, shell history, and agent context never contain it.
-Programs started by `op run` do not receive it either, unless you pass
-`--pass-token`.
+## Install
 
-If `OP_SERVICE_ACCOUNT_TOKEN` is already set in the parent environment, it is
-stripped from the child and replaced with the Keychain-resolved token. Ambient
-env overrides are only allowed when you explicitly pass `--allow-env-token`.
-
-## How it works
-
-opchain resolves tokens through two providers, tried in order:
-
-1. Environment override, only when `--allow-env-token` is passed and
-   `OPCHAIN_TOKEN_OVERRIDE` is set.
-2. `/usr/bin/security find-generic-password` against the macOS Keychain.
-
-Provider child processes receive a sanitized environment. They inherit basic
-execution vars (`PATH`, `HOME`, `SHELL`, etc.) but never ambient opchain token
-values.
-
-Delegated `op` processes receive the resolved token and a minimal set of
-inherited environment variables. `op run` is the exception: the program it
-starts needs your environment, so `op run` receives every variable except those
-whose names start with `OP_` or `OPCHAIN_`. No `op` process receives
-`OPCHAIN_TOKEN_OVERRIDE` or any pre-existing `OP_SERVICE_ACCOUNT_TOKEN` from the
-parent.
-
-Configuration lives in `~/.config/opchain/config.toml`. Each identity defines
-named profiles, an access mode, and an optional list of the vaults it is
-meant to use (not enforced). Profiles map
-to Keychain account names. A typical identity has `read` and `write` profiles
-backed by separate service-account tokens.
-
-Profile resolution for `op` commands is fail-closed. A profile resolves
-automatically only in these cases:
-
-- The identity defines exactly one profile. That single profile resolves for
-  read-safe commands regardless of `default_mode`.
-- The identity is in `auto` mode and defines a `read` profile. Read-safe
-  commands like `op vault list` resolve the `read` profile automatically.
-
-Everything else requires explicit profile selection (`--read`, `--write`, or
-`--profile <name>`). Write and other non-read-safe command shapes are never
-auto-resolved: they always require an explicit profile or access override, so
-they fail closed until you name one.
-
-## Quick start
-
-### 1. Install
-
-On an Apple silicon Mac:
+Requirements: an Apple silicon Mac, npm for installation, and
+[1Password CLI 2](https://developer.1password.com/docs/cli/get-started/) (`op`) on your `PATH`.
+[Create a service account](https://developer.1password.com/docs/service-accounts/get-started/)
+scoped to the vaults your programs need.
 
 ```bash
 npm install -g @dungle-scrubs/opchain
 ```
 
-This installs the signed, notarized `opchain` and `oprun` binaries. Bun is not
-needed. To build from source instead, see
-[Installing from source](#installing-from-source).
-
-### 2. Configure
+The package installs signed, notarized `opchain` and `oprun` binaries.
+Neither Node.js nor Bun is needed to run them.
+For a source build, see [PACKAGING.md](PACKAGING.md).
 
 Create `~/.config/opchain/config.toml`:
 
@@ -87,125 +40,97 @@ vaults = ["Services"]
 
 [identities.primary.profiles.read]
 keychain_account = "opchain:primary:read"
-
-[identities.primary.profiles.write]
-keychain_account = "opchain:primary:write"
 ```
 
-### 3. Store tokens
+Store the service-account token through the hidden prompt. Do not put its value
+on the command line or export it in your shell:
 
 ```bash
-opchain token set --identity primary --profile read --stdin < ~/my-read-token
-opchain token set --identity primary --profile write --stdin < ~/my-write-token
+opchain token set --identity primary --profile read
 ```
 
-### 4. Run a command
+Put references, not secret values, in your project's `.env.op`.
+Replace the example with an item and field your service account can read:
+
+```dotenv
+STRIPE_API_KEY=op://Services/Stripe/api_key
+```
+
+Confirm the setup:
 
 ```bash
+opchain identity list
 opchain primary op vault list
 ```
 
-## Commands
+From the directory containing `.env.op`, run the opening example.
+It prints `Service token not inherited` without printing any credential.
 
-### 1Password CLI
+## Usage
+
+### Run a program with its secrets
 
 ```bash
-# Auto mode resolves the read profile for safe commands
+oprun npm start
+```
+
+In a project with a `start` script, this runs
+`opchain primary --read op run --env-file .env.op -- npm start`.
+`oprun` defaults to `primary`, the `read` profile, and `.env.op` in the current
+directory. `op run` masks secret values in output. Use `OPRUN_ENV_FILE` to
+select another env file, or `OPRUN_IDENTITY` to select another configured identity.
+
+### Let a program call `op` itself
+
+For a trusted script that calls `op` itself, set `OPRUN_PASS_TOKEN=1`.
+This exposes the service-account token to the script and its children:
+
+```bash
+OPRUN_PASS_TOKEN=1 oprun ./script-that-calls-op.sh
+```
+
+The full form is `opchain primary --read --pass-token op run --env-file .env.op -- ./script-that-calls-op.sh`.
+Without this opt-in, the program does not inherit the token and its 1Password
+biometric integration is disabled.
+
+### Run one `op` command
+
+```bash
 opchain primary op vault list
-
-# Explicit write for mutations
-opchain primary --write op item edit "Stripe API Key" --vault Services
-
-# One-time env-token override
-opchain primary --allow-env-token op user list
+opchain primary --read op item list --vault Services
 ```
 
-Secret-printing `op` commands are refused by default. opchain inspects the
-`op` command line before resolving a token or spawning anything, then exits 1
-with the safe alternative when the command would print a secret value:
+Only the exact `op vault list` shape can select a profile automatically.
+Every other `op` command requires `--read`, `--write`, or `--profile <name>`.
+For mutations, configure and store a separate write token first; see
+[profile configuration](docs/reference.md#configuration).
+Secret-printing commands are refused before token resolution. The
+[reveal guard reference](docs/reference.md#reveal-guard) covers exceptions and the
+interactive `--allow-reveal` override.
 
-- `op read`, `op inject`, and `op document get` writing to stdout (pass
-  `-o <file>` or `--out-file <file>` and they stay allowed)
-- `op item get` with `--reveal`, `--otp`, or `--format json`
-- `op item create` and `op item edit` with `--reveal` or `--format json`
-- `op run --no-masking`
-- `op signin` (opchain injects a service-account token, so it is never needed)
-- `op service-account create`, `op connect token create`, and
-  `op events-api create` (each prints a new token)
-
-These keep running unchanged: masked `op run` (the default, including
-`--env-file`), `op item get` in its human-readable default output, `op item
-list`, `op vault list`, and the out-file variants above.
-
-To run a refused command anyway from an interactive terminal, pass
-`--allow-reveal` before `op`:
-
-```bash
-opchain primary --allow-reveal op read op://Services/Stripe/api_key
-```
-
-`--allow-reveal` requires an interactive stdin (a TTY); stdout may stay piped
-(`| pbcopy`). The check is a speed bump for agents, not a boundary - see
-[SECURITY.md](SECURITY.md).
-
-To inspect an item without seeing any value, use `item-structure`:
+### Inspect an item without seeing any value
 
 ```bash
 opchain primary item-structure "Stripe API Key" --vault Services
 ```
 
-```json
-{
-  "title": "Stripe API Key",
-  "vault": "Services",
-  "category": "API_CREDENTIAL",
-  "fields": [
-    {
-      "label": "api_key",
-      "type": "CONCEALED",
-      "has_value": true,
-      "value_length": 108
-    }
-  ]
-}
-```
+The JSON report includes the item title, vault, category, and each field's label,
+type, value presence, and value length. It never includes field values.
 
-`op run` hands the program the secret values from its env file, masked in its
-output, and not the service-account token. A program that calls `op` itself
-needs the token: pass `--pass-token` before `op`
-(`opchain primary --read --pass-token op run --env-file .env.op -- <program>`).
-`op run` needs `--` before the program.
-
-While `op` runs, opchain forwards SIGTERM, SIGINT, and SIGHUP to the `op`
-process and waits for it to end, so Ctrl+C stops the delegated command instead
-of orphaning it. opchain then exits with the `op` process's status: an exit
-code passes through, and `op` ended by a signal exits 128 plus the signal
-number.
-
-### `.env.op` validation
+### Check `.env.op` references before they ship
 
 ```bash
-# List every op:// reference in a file
 opchain primary secrets list .env.op
-
-# Validate every reference in a single file resolves
 opchain primary secrets check .env.op
-
-# Validate one file or a whole directory of .env.op files
-opchain primary secrets validate .env.op
 opchain primary secrets validate --project-wide
-
-# Inspect metadata for one reference (secrets are never printed)
-opchain primary secrets inspect op://Services/Stripe/api_key
 ```
 
-`secrets check` and `secrets validate` run the same reference-resolution
-workflow; the difference is scope. `secrets check` requires an explicit file
-path and validates only that one file. `secrets validate` validates one file
-or, with `--project-wide`, every `.env.op` file under `projects_dir`. Neither
-command prints resolved secret values.
+`check` validates one named file. `validate` accepts a file or directory;
+`--project-wide` scans every `.env.op` under `projects_dir`.
+Neither prints resolved secret values. `secrets inspect <op://...>` reports
+metadata for one reference, including `expires_at` when present.
 
-### Expiry tracking
+### Track items that expire
 
 ```bash
 opchain primary expires add op://Services/Stripe/api_key
@@ -213,114 +138,87 @@ opchain primary expires list
 opchain primary expires scan
 ```
 
-### Token management
+`scan` refreshes explicitly tracked items and reports their status against
+`expires_threshold_days`; it does not send notifications or rotate tokens.
+Tracking requires the item's top-level `expires_at` date, not a custom date field.
+See [expiry tracking](docs/reference.md#expiry-tracking) for statuses and storage.
 
-```bash
-opchain token set --identity primary --profile read --stdin
-opchain token remove --identity primary --profile read
-```
+## Reference
 
-### Setup
+### Commands
 
-```bash
-opchain doctor
+```text
+opchain [--debug] [--debug-format text|json] <command>
 opchain identity list
+opchain token set --identity <name> --profile <name> [--stdin]
+opchain token remove --identity <name> --profile <name> [--yes]
+opchain <identity> [--read|--write|--profile <name>] [--allow-env-token]
+         [--allow-reveal] [--pass-token] op <args...>
+opchain <identity> item-structure <item> [--vault <vault>]
+opchain <identity> secrets <list|check|inspect|validate> [path-or-ref]
+opchain <identity> expires <add|remove|list|scan> [args]
+opchain doctor
+opchain migrate-v1 [--dry-run]
+oprun <command>
 ```
 
-### Migration from the old opchain
+Every command, flag, refusal form, and configuration key is documented in [docs/reference.md](docs/reference.md).
 
-```bash
-opchain migrate-v1 --dry-run
-opchain migrate-v1
-```
+### Configuration
 
-### Debug output
+Configuration lives in `~/.config/opchain/config.toml`; Install shows all required keys.
+`projects_dir` sets the root for `secrets validate --project-wide`, and
+`expires_threshold_days` sets the scan window.
+Each identity has a `default_mode`, a `vaults` list, and named profiles.
+The vault list records intent and is not enforced. Each profile's
+`keychain_account` identifies its token under the Keychain service `opchain`.
 
-```bash
-opchain --debug primary op vault list
-opchain --debug --debug-format json primary expires scan
-```
+### Exit codes
 
-Debug output goes to stderr. It never contains token values, resolved secrets,
-or child-process stdout/stderr.
+Successful built-in commands exit 0; refusals and errors exit 1.
+Delegated `op` exit codes pass through. Signal termination exits 128 plus the signal number.
+Other `op` commands time out after 30 seconds by default, configurable with
+`OPCHAIN_OP_TIMEOUT_MS`. `op run` has no deadline.
+opchain forwards SIGTERM, SIGINT, and SIGHUP to `op` and waits for it to exit.
 
-## Security
+### Security
 
-opchain keeps tokens out of the parent environment. On the resolve-and-inject
-path - when opchain pulls a stored token and passes it to an `op` child process
-- the token is never placed in the parent shell environment, `ps` output,
-shell history, or agent context. It exists only inside the delegated child
-process.
+opchain reduces accidental exposure. It does not stop a process running as your macOS user.
 
-The same default covers the secrets the token unlocks: secret-printing `op`
-command forms are refused unless `--allow-reveal` is passed from an
-interactive terminal, so agent context never contains secret values printed
-through opchain by default. `item-structure` and `secrets inspect` report
-item metadata only, and the refusal message itself never echoes an argument
-value.
+- By default, token lookup passes the stored token to the delegated `op` process, not your shell or the program it starts. `--pass-token` explicitly exposes it to that program.
+- Secret-printing `op` commands are refused by default. `--allow-reveal` requires an interactive terminal and is a speed bump, not a boundary.
+- `token set` reads from a hidden prompt or stdin. Storing the token shells out to `/usr/bin/security add-generic-password`, which takes the token on that child's argv while it runs, so a same-user process can see it there.
+- The real boundary is the service-account token's scope. opchain does not isolate identities that share one macOS account.
 
-There is one deliberate exception, on the write path. `opchain token set`
-stores a token by shelling out to `/usr/bin/security add-generic-password`,
-which has no stdin mode for the password on this subcommand, so the token is
-passed on that child's argv. During the brief lifetime of that `security`
-process the token is visible to other processes running as the same macOS user
-(for example via `ps`). This is consistent with the threat model in
-[SECURITY.md](SECURITY.md), which does not defend against a malicious process
-running as the same user. `token set` still never accepts the token on
-opchain's own command line: input is read from a hidden TTY prompt or
-`--stdin`.
+Read [SECURITY.md](SECURITY.md) for the threat model and every rule.
 
-opchain does not provide hard isolation between identities under the same macOS
-account. The primary boundary is the 1Password service-account token scope
-itself.
+### Other docs
 
-Read [SECURITY.md](SECURITY.md) for the threat model, provider environment
-sanitization, telemetry rules, and state-file guarantees.
+- [docs/reference.md](docs/reference.md) - commands, flags, refusal forms, configuration keys, exit codes
+- [SECURITY.md](SECURITY.md) - threat model, trust boundaries, data handling
+- [MIGRATION.md](MIGRATION.md) - migrating from opchain v1
+- [PACKAGING.md](PACKAGING.md) - build, signing, notarization, release
+- [CONTRIBUTING.md](CONTRIBUTING.md) - setup, TDD workflow, security boundaries
 
-### Limiting what an agent can reach
+## Contributing
 
-The reveal guard keeps an agent from printing a secret by accident. It does
-not stop an agent that sets out to read one. A process running as your macOS
-user can fake a terminal to pass `--allow-reveal`, call `op` from inside
-`op run --pass-token`, or run the same `/usr/bin/security` lookup opchain uses
-to read a stored token. [SECURITY.md](SECURITY.md) lists these limits.
-
-What an agent can reach is set by the service-account tokens it can use.
-Scoping those tokens is up to you; opchain cannot do it for you.
-Recommended:
-
-- Give agents their own identity, backed by a service account with access
-  only to the vaults they need.
-- Keep any secret that no agent should see in a vault that no agent's service
-  account can access.
-- Check what a token actually reaches with `opchain <identity> op vault list`.
-  The `vaults` list in `config.toml` records your intent, but opchain does not
-  enforce it, so it cannot stop a token from reading a vault outside the list.
-
-## Installing from source
-
-Requirements: [Bun](https://bun.sh) 1.3+.
+Development needs [Bun](https://bun.sh) 1.3 or later.
 
 ```bash
 git clone https://github.com/dungle-scrubs/opchain.git
 cd opchain
 bun install --frozen-lockfile
+bun test
+bun run typecheck
+bun run lint
 bun run build
-bun run install-local
+codesign --force --sign - dist/opchain dist/oprun
 ```
 
-This places `opchain` and `oprun` in `~/.local/bin`.
+The final command ad-hoc signs the binaries for local runs; it does not notarize them.
+[CONTRIBUTING.md](CONTRIBUTING.md) covers the test-driven workflow and security boundaries.
+[PACKAGING.md](PACKAGING.md) covers local installation and release signing.
 
-Verify:
+## License
 
-```bash
-opchain --help
-opchain doctor
-```
-
-## Docs
-
-- [SECURITY.md](SECURITY.md) - threat model, trust boundaries, data-handling rules
-- [MIGRATION.md](MIGRATION.md) - v1 migration, dry-run, apply, rollback
-- [PACKAGING.md](PACKAGING.md) - build, debug flags, security fallback
-- [CONTRIBUTING.md](CONTRIBUTING.md) - setup, TDD workflow, security boundaries
+[MIT](LICENSE)
