@@ -10,6 +10,7 @@ const requiredPaths = [
   "package.json",
   "LICENSE",
   "README.md",
+  "docs/reference.md",
   "MIGRATION.md",
   "PACKAGING.md",
   "SECURITY.md",
