@@ -78,10 +78,16 @@ export async function runRelay(
   }
 
   // Bun's multi-pipe spawn occasionally fails stdio creation with a
-  // transient ENOENT under heavy parallel spawn load; one bounded retry
-  // makes the suite stable without masking real spawn errors.
+  // transient ENOENT under heavy parallel spawn load - sometimes thrown
+  // by spawn(), sometimes by the lazy child.stdio getters. Retrying the
+  // whole spawn + stream wiring a bounded number of times keeps the
+  // suite stable without masking real spawn errors.
   let child: ChildProcess | undefined;
-  for (let attempt = 0; child === undefined; attempt += 1) {
+  let valueStream:
+    | { destroy(): void; on(event: "data", listener: (chunk: Buffer) => void): unknown; pause(): void }
+    | null
+    | undefined;
+  for (let attempt = 0; ; attempt += 1) {
     try {
       child = spawn(process.execPath, [
         "run",
@@ -101,11 +107,17 @@ export async function runRelay(
         },
         stdio,
       });
+      // Touch every stdio getter now: the transient failure surfaces
+      // here as well as in spawn itself.
+      void child.stdout;
+      void child.stderr;
+      valueStream = child.stdio[3] as unknown as typeof valueStream;
+      break;
     } catch (error) {
       void error;
-      // A test helper: every synchronous spawn throw here is
-      // environmental (Bun's multi-pipe stdio creation flakes under
-      // suite load), so retry a bounded number of times, then rethrow.
+      // If the throw came from the lazy stdio getters, the process is
+      // already running; stop it before retrying.
+      child?.kill("SIGKILL");
       if (attempt >= 3) {
         throw error;
       }
@@ -125,11 +137,8 @@ export async function runRelay(
   child.stderr?.on("data", (chunk: Buffer) => stderrChunks.push(chunk));
 
   // For stdio slots past index 2, "pipe" hands the parent the read end;
-  // the spawn types model it as Writable, so narrow it for draining.
-  const valueStream = child.stdio[3] as unknown as
-    | { destroy(): void; on(event: "data", listener: (chunk: Buffer) => void): unknown; pause(): void }
-    | null
-    | undefined;
+  // the spawn types model it as Writable, so it was narrowed while
+  // wiring above.
   if (valueStream !== null && valueStream !== undefined) {
     valueStream.on("data", (chunk: Buffer) => {
       valueChunks.push(chunk);
