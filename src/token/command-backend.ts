@@ -228,6 +228,22 @@ export function runTokenCommandAsync(
       child.kill(signal);
     };
 
+    const settleTimedOut = (): void => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      if (timeout !== undefined) {
+        clearTimeout(timeout);
+      }
+      if (killTimer !== undefined) {
+        clearTimeout(killTimer);
+      }
+
+      resolve({ error: new TokenCommandError("timeout"), ok: false });
+    };
+
     timeout = setTimeout(() => {
       if (settled) {
         return;
@@ -240,7 +256,14 @@ export function runTokenCommandAsync(
       killTimer = setTimeout(() => {
         killDirectChild("SIGKILL");
       }, PROVIDER_SIGKILL_GRACE_MS);
-    }, options.timeoutMs);
+      // The deadline may outlive the provider: a descendant holding
+      // its pipes keeps close from firing, so an already-exited child
+      // settles here instead of hanging. A zero budget fires at once
+      // rather than disabling the timer.
+      if (child.exitCode !== null || child.signalCode !== null) {
+        settleTimedOut();
+      }
+    }, Math.max(0, options.timeoutMs));
 
     if (options.input !== undefined) {
       child.stdin?.write(options.input);

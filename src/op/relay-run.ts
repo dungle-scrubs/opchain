@@ -153,24 +153,45 @@ function runRelayOpChild(
         clearTimeout(killTimer);
       }
     };
-    const timeout =
-      timeoutMs <= 0
-        ? undefined
-        : setTimeout(() => {
-            if (settled) {
-              return;
-            }
+    const settleTimedOut = (): void => {
+      if (settled) {
+        return;
+      }
 
-            timedOut = true;
-            killDirectChild("SIGTERM");
-            killTimer = setTimeout(() => {
-              if (settled) {
-                return;
-              }
+      settled = true;
+      teardown();
+      resolve({
+        exitCode: 1,
+        ok: true,
+        stderrText: Buffer.concat(stderrChunks).toString("utf8"),
+        stdout: Buffer.concat(stdoutChunks),
+        timedOut: true,
+      });
+    };
 
-              killDirectChild("SIGKILL");
-            }, OP_SIGKILL_GRACE_MS);
-          }, timeoutMs);
+    // A zero or negative remaining budget fires at once rather than
+    // disabling the timer: expired work is refused, never unlimited.
+    const timeout = setTimeout(() => {
+      if (settled) {
+        return;
+      }
+
+      timedOut = true;
+      killDirectChild("SIGTERM");
+      killTimer = setTimeout(() => {
+        if (settled) {
+          return;
+        }
+
+        killDirectChild("SIGKILL");
+      }, OP_SIGKILL_GRACE_MS);
+      // The deadline may outlive the direct child: a descendant
+      // holding its pipes keeps close from firing, so an
+      // already-exited child settles here instead of hanging.
+      if (child.exitCode !== null || child.signalCode !== null) {
+        settleTimedOut();
+      }
+    }, Math.max(0, timeoutMs));
 
     child.stdout?.on("data", (chunk: Buffer) => {
       stdoutChunks.push(chunk);
@@ -437,6 +458,13 @@ export async function runValueRelay(
   // Grammar: validated independently of the reveal guard, before anything
   // else runs. A refusal here resolves no token, loads no config, and
   // spawns no child.
+  // Option parsing that refused the line outright (an unknown option or
+  // a root-parser error) renders the relay's grammar refusal: one
+  // anchored identifier, never the generic parser message.
+  if (options.relayParseRefused === true) {
+    return finish({ check: "grammar", kind: "refused" }, 0);
+  }
+
   const command = validateRelayCommand({
     allowReveal: options.allowReveal,
     hasRead: options.accessOverride === "read",
@@ -448,8 +476,10 @@ export async function runValueRelay(
   }
 
   // A parse that failed on another flag while --value-fd was present
-  // is a malformed relay command line, not a malformed descriptor.
-  if (rawValueFd === "" && options.valueFdMalformed !== true) {
+  // is a malformed relay command line: the descriptor value is absent,
+  // not empty. An attached empty spelling (valueFd === "") flows to
+  // the descriptor checks below and refuses as descriptor-not-open.
+  if (options.valueFd === undefined && options.valueFdMalformed !== true) {
     return finish({ check: "grammar", kind: "refused" }, 0);
   }
 
@@ -513,6 +543,17 @@ export async function runValueRelay(
       deadlineMs,
       fd,
     });
+  }
+
+  // The absolute deadline is checked before starting either
+  // subprocess: an expired budget refuses with `deadline` rather than
+  // starting work that could outlive it.
+  if (remainingMs() === 0) {
+    return finish(
+      { kind: "resolution", resolutionStage: "token-deadline" },
+      0,
+      { deadlineMs, fd },
+    );
   }
 
   const tokenResult = await resolveToken({

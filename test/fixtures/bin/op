@@ -108,7 +108,15 @@ if [[ "$1" == "read" && $# -ge 2 ]]; then
     exit "${OPCHAIN_TEST_OP_READ_EXIT_CODE:-1}"
   fi
 
-  if [[ -n "${OPCHAIN_TEST_OP_RELAY_WARN_STDERR:-}" ]]; then
+  if [[ -n "${OPCHAIN_TEST_OP_LEAVE_DESCENDANT:-}" ]]; then
+  # Exits immediately after spawning a descendant that inherits this
+  # child's stdout pipe and holds it open: the direct child is reaped
+  # while the relay's close event is still blocked on the descendant.
+  sleep 30 &
+  exit 0
+fi
+
+if [[ -n "${OPCHAIN_TEST_OP_RELAY_WARN_STDERR:-}" ]]; then
     printf '%s\n' "$OPCHAIN_TEST_OP_RELAY_WARN_STDERR" >&2
   fi
 

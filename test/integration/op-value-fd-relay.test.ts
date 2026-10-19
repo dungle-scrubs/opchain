@@ -63,6 +63,54 @@ describe("op --value-fd relay", () => {
       expect(run.stderrText).toBe("opchain: relay: descriptor-not-open\n");
     });
 
+    test("an unknown option alongside --value-fd gives grammar", async () => {
+      const run = await runRelay([
+        "primary",
+        "--read",
+        "--value-fd",
+        "3",
+        "--bogus",
+        "op",
+        "read",
+        REFERENCE,
+      ]);
+
+      expect(run.result).toEqual({ code: 1, signal: null });
+      expect(run.stderrText).toBe("opchain: relay: grammar\n");
+      expect(existsSync(run.opLogPath)).toBe(false);
+    });
+
+    test("a root-parser error under --value-fd gives grammar", async () => {
+      const run = await runRelay([
+        "--debug-format",
+        "--read",
+        "primary",
+        "--value-fd",
+        "3",
+        "op",
+        "read",
+        REFERENCE,
+      ]);
+
+      expect(run.result).toEqual({ code: 1, signal: null });
+      expect(run.stderrText).toBe("opchain: relay: grammar\n");
+    });
+
+    test("an empty attached descriptor gives descriptor-not-open", async () => {
+      const run = await runRelay([
+        "primary",
+        "--read",
+        "--value-fd=",
+        "op",
+        "read",
+        REFERENCE,
+      ]);
+
+      expect(run.result).toEqual({ code: 1, signal: null });
+      expect(run.stderrText).toBe("opchain: relay: descriptor-not-open\n");
+      expect(existsSync(run.opLogPath)).toBe(false);
+    });
+
     test("another flag's missing value gives grammar", async () => {
       const run = await runRelay([
         "primary",

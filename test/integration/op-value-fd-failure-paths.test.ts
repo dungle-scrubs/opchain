@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -91,6 +91,43 @@ describe("op --value-fd failure paths", () => {
     expect(run.stderrText).toBe("opchain: relay: child-timeout\n");
     expect(run.valueBytes.length).toBe(0);
   }, 10_000);
+
+  test("a descendant holding the pipes settles the deadline after its parent exits", async () => {
+    const startedAt = Date.now();
+    const run = await runRelay(
+      ["primary", "--read", "--value-fd", "3", "op", "read", REFERENCE],
+      {
+        env: {
+          OPCHAIN_OP_TIMEOUT_MS: "1500",
+          OPCHAIN_TEST_OP_LEAVE_DESCENDANT: "1",
+        },
+      },
+    );
+    const elapsedMs = Date.now() - startedAt;
+
+    // The child exited at once; its descendant keeps the pipe open, so
+    // only deadline expiry can settle the relay - with the child-timeout
+    // identifier (the deadline expired in the child phase), never a hang
+    // and never a signal to the reaped child.
+    expect(run.result).toEqual({ code: 1, signal: null });
+    expect(run.stderrText).toBe("opchain: relay: child-timeout\n");
+    expect(elapsedMs).toBeGreaterThanOrEqual(1_400);
+    expect(elapsedMs).toBeLessThan(15_000);
+  }, 25_000);
+
+  test("an expired budget refuses before starting either subprocess", async () => {
+    const run = await runRelay(
+      ["primary", "--read", "--value-fd", "3", "op", "read", REFERENCE],
+      { env: { OPCHAIN_OP_TIMEOUT_MS: "1" } },
+    );
+
+    expect(run.result).toEqual({ code: 1, signal: null });
+    expect(run.stderrText).toBe("opchain: relay: deadline\n");
+    // The provider never started: a zero budget refuses, it never
+    // launches a subprocess (and never means unlimited execution).
+    expect(existsSync(run.securityLogPath)).toBe(false);
+    expect(existsSync(run.opLogPath)).toBe(false);
+  }, 20_000);
 
   test("a stalled token resolution hits the deadline, proving cancellable plumbing", async () => {
     const startedAt = Date.now();
