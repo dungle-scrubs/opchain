@@ -81,7 +81,7 @@ describe("buildProgram", () => {
     const helpText = buildProgram().helpInformation();
 
     expect(helpText).toContain(
-      "<identity> [--profile <name>|--read|--write] [--allow-env-token] [--allow-reveal] [--pass-token] op <args...>",
+      "<identity> [--profile <name>|--read|--write] [--allow-env-token] [--allow-reveal] [--pass-token] [--value-fd <fd>] op <args...>",
     );
     expect(helpText).toContain("Identity-scoped commands:");
     expect(helpText).toContain(
