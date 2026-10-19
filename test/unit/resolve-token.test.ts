@@ -94,3 +94,40 @@ describe("resolveToken", () => {
     expect(result.error.message).not.toContain("token-from-security");
   });
 });
+
+describe("resolveToken with a command deadline", () => {
+  test("kills a stalled security provider inside the deadline", async () => {
+    process.env.OPCHAIN_TEST_SECURITY_SLEEP_MS = "30000";
+
+    const startedAt = Date.now();
+    const result = await resolveToken({
+      accountName: "opchain:primary:read",
+      allowEnvToken: false,
+      commandTimeoutMs: 250,
+      securityPath: join(process.cwd(), "test/fixtures/bin/security"),
+      serviceName: "opchain",
+    });
+    const elapsedMs = Date.now() - startedAt;
+
+    delete process.env.OPCHAIN_TEST_SECURITY_SLEEP_MS;
+
+    expect(elapsedMs).toBeLessThan(5_000);
+    expect(result.ok).toBe(false);
+  });
+
+  test("resolves normally inside the deadline", async () => {
+    process.env.OPCHAIN_TEST_SECURITY_TOKEN = "token-for-deadline";
+
+    const result = await resolveToken({
+      accountName: "opchain:primary:read",
+      allowEnvToken: false,
+      commandTimeoutMs: 10_000,
+      securityPath: join(process.cwd(), "test/fixtures/bin/security"),
+      serviceName: "opchain",
+    });
+
+    delete process.env.OPCHAIN_TEST_SECURITY_TOKEN;
+
+    expect(result.ok).toBe(true);
+  });
+});

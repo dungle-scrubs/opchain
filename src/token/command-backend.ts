@@ -182,7 +182,12 @@ export function runTokenCommandAsync(
   return new Promise((resolve) => {
     let child: ChildProcess;
     try {
+      // Detached: the provider leads its own process group, so a kill can
+      // reach shell scripts and their children together. Without the
+      // group kill, a stub shell's stalled child would hold the stdout
+      // pipe open past the deadline.
       child = spawn(commandPath, args, {
+        detached: true,
         env: buildProviderChildEnv(),
         stdio: ["pipe", "pipe", "pipe"],
       });
@@ -215,17 +220,30 @@ export function runTokenCommandAsync(
       resolve(result);
     };
 
+    const killProcessGroup = (signal: NodeJS.Signals): void => {
+      if (child.pid !== undefined) {
+        try {
+          process.kill(-child.pid, signal);
+          return;
+        } catch {
+          // The group is gone; fall through to the direct kill.
+        }
+      }
+
+      child.kill(signal);
+    };
+
     timeout = setTimeout(() => {
       if (settled) {
         return;
       }
 
       timedOut = true;
-      child.kill("SIGTERM");
+      killProcessGroup("SIGTERM");
       // A SIGTERM-ignoring provider still holds the relay deadline, so
       // escalate to an unblockable SIGKILL.
       killTimer = setTimeout(() => {
-        child.kill("SIGKILL");
+        killProcessGroup("SIGKILL");
       }, PROVIDER_SIGKILL_GRACE_MS);
     }, options.timeoutMs);
 
@@ -238,7 +256,7 @@ export function runTokenCommandAsync(
       stdoutBytes += chunk.length;
       if (stdoutBytes > maxBytes) {
         stdoutOverLimit = true;
-        child.kill("SIGKILL");
+        killProcessGroup("SIGKILL");
         return;
       }
 
@@ -250,6 +268,19 @@ export function runTokenCommandAsync(
     child.on("error", (error: Error) => {
       void error;
       finish({ error: new TokenCommandError("start"), ok: false });
+    });
+
+    child.on("exit", () => {
+      // After a kill, grandchildren may still hold the stdio pipes open,
+      // so the killed outcome settles on exit rather than close.
+      if (timedOut) {
+        finish({ error: new TokenCommandError("timeout"), ok: false });
+        return;
+      }
+
+      if (stdoutOverLimit) {
+        finish({ error: new TokenCommandError("stdout_limit"), ok: false });
+      }
     });
 
     child.on("close", (exitCode) => {

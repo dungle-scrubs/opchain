@@ -7,10 +7,15 @@ import {
   TokenMutationError,
   type TokenProviderResult,
 } from "./token-provider.ts";
-import { runTokenCommand } from "./command-backend.ts";
+import { runTokenCommand, runTokenCommandAsync } from "./command-backend.ts";
 
 type SecurityTokenRequest = {
   readonly accountName: string;
+  /**
+   * When set, the provider runs through the cancellable async backend
+   * under this timeout instead of the synchronous spawn.
+   */
+  readonly commandTimeoutMs?: number;
   readonly securityPath: string;
   readonly serviceName: string;
 };
@@ -42,14 +47,20 @@ type RemoveTokenResult =
 export async function getTokenFromSecurity(
   request: SecurityTokenRequest,
 ): Promise<TokenProviderResult> {
-  const commandResult = runTokenCommand(request.securityPath, [
+  const commandArgs = [
     "find-generic-password",
     "-w",
     "-s",
     request.serviceName,
     "-a",
     request.accountName,
-  ]);
+  ] as const;
+  const commandResult =
+    request.commandTimeoutMs === undefined
+      ? runTokenCommand(request.securityPath, commandArgs)
+      : await runTokenCommandAsync(request.securityPath, commandArgs, {
+          timeoutMs: request.commandTimeoutMs,
+        });
 
   if (!commandResult.ok && commandResult.error.reason === "start") {
     return { error: createProviderStartError("security"), ok: false };
