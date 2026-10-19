@@ -15,6 +15,27 @@ const SYNTHETIC_VALUE = "synthetic-relay-value-61";
 const REFERENCE = "op://Infra/reflect-intake-restic/password";
 
 describe("op --value-fd relay", () => {
+  describe("argument passthrough without relay mode", () => {
+    test("delivers wrapped-program arguments after op byte for byte", async () => {
+      const run = await runRelay([
+        "primary",
+        "--read",
+        "op",
+        "run",
+        "--",
+        "/bin/echo",
+        "--value-fd=3",
+        "--out-file=x",
+      ], { env: { OPCHAIN_TEST_OP_RUN_EXEC: "1" } });
+
+      expect(run.result).toEqual({ code: 0, signal: null });
+      expect(run.stdoutText).toContain("--value-fd=3 --out-file=x");
+      expect(readFileSync(run.opLogPath, "utf8")).toContain(
+        "--value-fd=3 --out-file=x",
+      );
+      expect(run.stdoutText).not.toContain("--value-fd 3");
+    });
+  });
   describe("successful relay", () => {
     test("delivers the value byte-exact on descriptor 3 with empty stdout and stderr", async () => {
       const run = await runRelay(

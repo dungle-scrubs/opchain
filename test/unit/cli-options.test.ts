@@ -425,3 +425,52 @@ describe("parseCliOptions", () => {
     expect(result.parseError).toBe("Missing value for --value-fd.");
   });
 });
+
+describe("attached --value-fd spelling scope", () => {
+  test("does not rewrite tokens after the op boundary", () => {
+    const result = parseCliOptions([
+      "human",
+      "--read",
+      "op",
+      "run",
+      "--",
+      "prog",
+      "--value-fd=3",
+      "--out-file=x",
+    ]);
+
+    expect(result.valueFd).toBeUndefined();
+    expect(result.commandArgs).toEqual([
+      "human",
+      "op",
+      "run",
+      "--",
+      "prog",
+      "--value-fd=3",
+      "--out-file=x",
+    ]);
+  });
+
+  test("still normalizes the attached spelling in opchain's own prefix", () => {
+    const result = parseCliOptions([
+      "human",
+      "--read",
+      "--value-fd=3",
+      "op",
+      "run",
+      "--",
+      "prog",
+      "--value-fd=9",
+    ]);
+
+    expect(result.valueFd).toBe("3");
+    expect(result.commandArgs).toEqual([
+      "human",
+      "op",
+      "run",
+      "--",
+      "prog",
+      "--value-fd=9",
+    ]);
+  });
+});

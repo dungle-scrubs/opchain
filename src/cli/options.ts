@@ -205,20 +205,26 @@ function normalizeDebugFormat(input: string | undefined): DebugFormat {
 }
 
 /**
- * Splits attached `--value-fd=<value>` spellings into separate tokens.
+ * Splits attached `--value-fd=<value>` spellings into separate tokens,
+ * but only inside opchain's own option prefix.
  *
- * The shared flag parser handles only `--flag value` spellings for
- * op-execution flags; the relay route additionally documents the attached
- * `--value-fd=3` form, so it is normalized before envelope parsing. Any
- * resulting value, integer or not, reaches the relay descriptor checks,
- * which refuse non-integers fail-closed.
+ * Everything after the `op` boundary marker is delegated `op` argv -
+ * including a wrapped program's arguments after `--` - and must pass
+ * through byte for byte, so the boundary is located on the raw argv
+ * before any splitting. Any resulting value, integer or not, reaches
+ * the relay descriptor checks, which refuse non-integers fail-closed.
  *
  * @param argv - User-provided CLI arguments.
- * @returns {readonly string[]} Arguments with attached --value-fd spellings split.
+ * @returns {readonly string[]} Arguments with attached --value-fd spellings split before the op marker.
  */
 function expandAttachedValueFd(argv: readonly string[]): readonly string[] {
+  const opBoundary = findOpEnvelopeIndex(argv);
+  const prefix =
+    opBoundary === -1 ? argv : argv.slice(0, opBoundary);
+  const suffix = opBoundary === -1 ? [] : argv.slice(opBoundary);
+
   const expanded: string[] = [];
-  for (const token of argv) {
+  for (const token of prefix) {
     if (token.startsWith("--value-fd=")) {
       expanded.push("--value-fd", token.slice("--value-fd=".length));
       continue;
@@ -227,7 +233,7 @@ function expandAttachedValueFd(argv: readonly string[]): readonly string[] {
     expanded.push(token);
   }
 
-  return expanded;
+  return [...expanded, ...suffix];
 }
 
 /**
