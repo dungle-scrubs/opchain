@@ -74,7 +74,7 @@ describe("op --value-fd failure paths", () => {
       expect(run.stderrText).toBe(`opchain: relay: ${identifier}\n`);
       expect(run.valueBytes.length).toBe(0);
     }
-  });
+  }, 30_000);
 
   test("child timeout reports child-timeout and writes nothing", async () => {
     const run = await runRelay(
@@ -112,7 +112,7 @@ describe("op --value-fd failure paths", () => {
     expect(run.valueBytes.length).toBe(0);
   }, 15_000);
 
-  test("a peer that stalls mid-value gets write-failed or deadline, never outliving it", async () => {
+  test("a stalled peer polls until the deadline and never sees a spurious failure", async () => {
     const startedAt = Date.now();
     const run = await runRelay(
       ["primary", "--read", "--value-fd=3", "op", "read", REFERENCE],
@@ -126,17 +126,33 @@ describe("op --value-fd failure paths", () => {
     );
     const elapsedMs = Date.now() - startedAt;
 
-    // The spec allows either identifier for a stalled peer: a blocked
-    // write expires the deadline, while a refused write fails fast -
-    // both stop the relay with a prefix delivered and nothing more.
+    // The non-blocking write loop polls while the pipe is full: a
+    // stalled (not closed) peer is never a write error, the loop waits
+    // out the whole deadline, and a prefix was already delivered.
     expect(run.result).toEqual({ code: 1, signal: null });
-    expect(run.stderrText).toMatch(
-      /^opchain: relay: (deadline|write-failed)\n$/,
-    );
+    expect(run.stderrText).toBe("opchain: relay: deadline\n");
+    expect(elapsedMs).toBeGreaterThanOrEqual(4_500);
     expect(elapsedMs).toBeLessThan(15_000);
     expect(run.valueBytes.length).toBeGreaterThan(0);
     expect(run.valueBytes.length).toBeLessThan(262_145);
-  }, 20_000);
+  }, 25_000);
+
+  test("a child that writes the value before a nonzero exit delivers nothing", async () => {
+    const run = await runRelay(
+      ["primary", "--read", "--value-fd", "3", "op", "read", REFERENCE],
+      {
+        env: {
+          OPCHAIN_TEST_OP_RELAY_LEAK_STDOUT: SYNTHETIC_VALUE,
+        },
+      },
+    );
+
+    expect(run.result).toEqual({ code: 1, signal: null });
+    expect(run.stderrText).toBe("opchain: relay: child-failed:unknown\n");
+    expect(run.valueBytes.length).toBe(0);
+    expect(run.stdoutText).toBe("");
+    expect(run.stderrText).not.toContain(SYNTHETIC_VALUE);
+  });
 
   test("a peer that closes mid-value gets write-failed after a prefix", async () => {
     const run = await runRelay(

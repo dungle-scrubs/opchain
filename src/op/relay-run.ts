@@ -53,6 +53,12 @@ const STOP_SIGNALS: readonly NodeJS.Signals[] = [
 const WRITE_CHUNK_BYTES = 64 * 1024;
 
 /**
+ * How long the write loop waits between poll turns when the descriptor
+ * reports it cannot accept more bytes yet.
+ */
+const WRITE_POLL_INTERVAL_MS = 20;
+
+/**
  * Largest amount of child stderr retained for classification. The child's
  * stderr is read to EOF in full so it can never block, but only this much
  * is kept in memory: diagnostics are short, and the classifier never
@@ -301,13 +307,16 @@ function raceWithDeadline<T>(
 
 /**
  * Writes the buffered value bytes to the descriptor, byte-exact, in a
- * deadline-aware loop.
+ * deadline-aware non-blocking loop with poll.
  *
- * The event loop stays responsive: each chunked write runs off the main
- * thread, and a stalled peer that never drains the pipe loses the race
- * against the deadline rather than outliving it. A prefix may already
- * have been delivered when a write fails or the deadline expires; the
- * descriptor is never closed - the caller owns it.
+ * Each chunked write either advances, reports EAGAIN/EWOULDBLOCK (the
+ * descriptor cannot accept more bytes yet - the loop polls and retries
+ * until the deadline), reports EINTR (retried), or fails (EPIPE and
+ * friends - `write-failed`). A peer that stops draining therefore hits
+ * the deadline rather than erroring or outliving it, and the event loop
+ * stays responsive throughout. A prefix may already have been delivered
+ * when a write fails or the deadline expires; the descriptor is never
+ * closed - the caller owns it.
  *
  * @param fd - Private descriptor number to write to.
  * @param bytes - Buffered value exactly as `op` printed it.
@@ -337,6 +346,22 @@ async function writeValueToDescriptor(
     }
 
     if ("error" in outcome) {
+      const code = (outcome.error as { readonly code?: string }).code;
+      if (code === "EAGAIN" || code === "EWOULDBLOCK" || code === "EINTR") {
+        // Poll: the descriptor may accept bytes again at any moment, so
+        // wait one interval and retry, bounded by the deadline.
+        const pollMs = Math.min(
+          WRITE_POLL_INTERVAL_MS,
+          Math.max(0, deadlineAt - Date.now()),
+        );
+        if (pollMs > 0) {
+          await new Promise((resolve) => {
+            setTimeout(resolve, pollMs);
+          });
+        }
+        continue;
+      }
+
       return "write-failed";
     }
 

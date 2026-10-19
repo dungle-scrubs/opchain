@@ -32,6 +32,23 @@ export type RelayRunResult = {
 export type RelayPeerMode = "drain" | "stall-after-first-chunk" | "destroy-after-first-chunk";
 
 /**
+ * Bun's demonstrated stdio-creation flake: an ENOENT from the connect
+ * inside child-process stdio creation, delivered either as a
+ * synchronous throw from spawn() or asynchronously as a stream `error`
+ * event.
+ */
+function isBunStdioCreationFlake(error: unknown): boolean {
+  const e = error as { code?: unknown; message?: unknown; syscall?: unknown };
+  if (e.code !== "ENOENT") {
+    return false;
+  }
+
+  return (
+    e.syscall === "connect" || String(e.message).includes("Failed to connect")
+  );
+}
+
+/**
  * Runs one opchain relay invocation with descriptor 3 wired per `stdio3`
  * and every stream drained concurrently.
  *
@@ -77,17 +94,17 @@ export async function runRelay(
     stdio.push(stdio3);
   }
 
-  // Bun's multi-pipe spawn occasionally fails stdio creation with a
-  // transient ENOENT under heavy parallel spawn load - sometimes thrown
-  // by spawn(), sometimes by the lazy child.stdio getters. Retrying the
-  // whole spawn + stream wiring a bounded number of times keeps the
-  // suite stable without masking real spawn errors.
+  // Retry ONLY the demonstrated Bun stdio-creation flake (three
+  // retries), reaping each failed attempt; every other error rethrows.
+  // The flake can arrive as a synchronous throw or, one tick later, as
+  // a stream `error` event, so both paths are checked per attempt.
   let child: ChildProcess | undefined;
   let valueStream:
-    | { destroy(): void; on(event: "data", listener: (chunk: Buffer) => void): unknown; pause(): void }
+    | { destroy(): void; on(event: "data", listener: (chunk: Buffer) => void): unknown; on(event: "error", listener: (error: Error) => void): unknown; pause(): void; resume(): void; once(event: "end", listener: () => void): unknown }
     | null
     | undefined;
   for (let attempt = 0; ; attempt += 1) {
+    let attemptError: unknown;
     try {
       child = spawn(process.execPath, [
         "run",
@@ -107,21 +124,33 @@ export async function runRelay(
         },
         stdio,
       });
-      // Touch every stdio getter now: the transient failure surfaces
-      // here as well as in spawn itself.
-      void child.stdout;
-      void child.stderr;
       valueStream = child.stdio[3] as unknown as typeof valueStream;
+      // The flake also surfaces asynchronously as a stream error; catch
+      // it with immediate listeners, then yield one tick.
+      const recordStreamError = (error: Error): void => {
+        if (attemptError === undefined) {
+          attemptError = error;
+        }
+      };
+      child.stdout?.on("error", recordStreamError);
+      child.stderr?.on("error", recordStreamError);
+      valueStream?.on("error", recordStreamError);
+      child.on("error", recordStreamError);
+      await new Promise((resolve) => {
+        setTimeout(resolve, 25);
+      });
+      if (attemptError !== undefined) {
+        throw attemptError;
+      }
       break;
     } catch (error) {
-      void error;
-      // If the throw came from the lazy stdio getters, the process is
-      // already running; stop it before retrying.
-      child?.kill("SIGKILL");
-      if (attempt >= 3) {
+      const flake = isBunStdioCreationFlake(error);
+      if (attempt >= 3 || !flake) {
         throw error;
       }
 
+      // Reap the failed attempt before retrying.
+      child?.kill("SIGKILL");
       await new Promise((resolve) => {
         setTimeout(resolve, 150);
       });
@@ -132,6 +161,7 @@ export async function runRelay(
   const stderrChunks: Buffer[] = [];
   const valueChunks: Buffer[] = [];
   let firstChunkSeen = false;
+  let peerDestroyedStream = false;
 
   child.stdout?.on("data", (chunk: Buffer) => stdoutChunks.push(chunk));
   child.stderr?.on("data", (chunk: Buffer) => stderrChunks.push(chunk));
@@ -150,6 +180,7 @@ export async function runRelay(
       if (peerMode === "stall-after-first-chunk") {
         valueStream.pause();
       } else {
+        peerDestroyedStream = true;
         valueStream.destroy();
       }
     });
@@ -165,6 +196,24 @@ export async function runRelay(
       });
     },
   );
+
+  // A paused peer may still owe the parent buffered bytes: resume the
+  // stream and let it end before the caller measures what arrived, so
+  // received-byte assertions are deterministic.
+  if (valueStream !== null && valueStream !== undefined && !peerDestroyedStream) {
+    valueStream.resume();
+    await new Promise<void>((resolve) => {
+      let settled = false;
+      const finish = (): void => {
+        if (!settled) {
+          settled = true;
+          resolve();
+        }
+      };
+      valueStream?.once("end", finish);
+      setTimeout(finish, 3_000);
+    });
+  }
 
   if (fileFd !== undefined) {
     closeSync(fileFd);

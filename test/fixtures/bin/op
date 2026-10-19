@@ -112,6 +112,13 @@ if [[ "$1" == "read" && $# -ge 2 ]]; then
     printf '%s\n' "$OPCHAIN_TEST_OP_RELAY_WARN_STDERR" >&2
   fi
 
+  if [[ -n "${OPCHAIN_TEST_OP_RELAY_LEAK_STDOUT:-}" ]]; then
+    # Writes the value to stdout, then fails: the relay must discard the
+    # buffered bytes, because acceptance is exit 0 only.
+    printf '%s\n' "$OPCHAIN_TEST_OP_RELAY_LEAK_STDOUT"
+    exit 7
+  fi
+
   if [[ -n "${OPCHAIN_TEST_OP_RELAY_VALUE_BYTES:-}" ]]; then
     head -c "$OPCHAIN_TEST_OP_RELAY_VALUE_BYTES" /dev/zero | tr '\0' 'x'
     printf '\n'

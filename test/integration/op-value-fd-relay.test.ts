@@ -211,7 +211,7 @@ describe("op --value-fd relay", () => {
         expect(existsSync(run.securityLogPath)).toBe(false);
         expect(existsSync(outFile)).toBe(false);
       }
-    });
+    }, 30_000);
 
     test("refuses global flags, -- separators, extra references, and non-read paths", async () => {
       const refused: readonly (readonly string[])[] = [
@@ -240,7 +240,7 @@ describe("op --value-fd relay", () => {
         expect(existsSync(run.opLogPath)).toBe(false);
         expect(existsSync(run.securityLogPath)).toBe(false);
       }
-    });
+    }, 40_000);
 
     test("refuses --allow-reveal alongside --value-fd with precedence over the interactive override", () => {
       const homePath = mkdtempSync(join(tmpdir(), "opchain-relay-tty-"));
@@ -347,7 +347,7 @@ describe("op --value-fd relay", () => {
         expect(run.stderrText).toBe("opchain: relay: descriptor-standard\n");
         expect(existsSync(run.opLogPath)).toBe(false);
       }
-    });
+    }, 20_000);
 
     test("refuses a descriptor duplicating a piped stdout endpoint", async () => {
       const run = await runRelay(
