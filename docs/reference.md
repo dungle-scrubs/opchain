@@ -36,6 +36,7 @@ These flags apply only to `op` commands and must appear before the `op` token. O
 | `--allow-env-token` | Let `OPCHAIN_TOKEN_OVERRIDE` supply the token for this invocation. |
 | `--allow-reveal` | Run an `op` command that prints secret values. Interactive terminal only. |
 | `--pass-token` | Let an `op run` program see the service-account token. |
+| `--value-fd <fd>` | Relay `op read`'s value to inherited descriptor `<fd>` instead of stdout. Requires `--read`; the relay grammar and descriptor checks apply. |
 
 ## Profile resolution
 
@@ -81,6 +82,55 @@ Known limits, all within the same-user threat model in [SECURITY.md](../SECURITY
 - A child of `op run --pass-token` that calls `op` itself, and bare `op` invoked without opchain, bypass the guard entirely.
 - An out-file path that is a symlink to a device is not detected. Only lexical `/dev/` prefixes are checked.
 - Command aliases are matched from a fixed list, so an alias a future `op` release adds may not be covered.
+
+## Value relay (`--value-fd`)
+
+`opchain <identity> --read --value-fd <fd> op read <op://reference>` is the
+unattended read route: the value is written byte-exact to inherited descriptor
+`<fd>`, and opchain's own stdout and stderr stay empty. The descriptor must be
+a pipe or socket that is not descriptor 0, 1, or 2 and does not name the same
+endpoint as opchain's stdout or stderr (a duplicated pipe is refused like
+stdout itself). opchain never closes the descriptor; the caller owns it.
+
+Relay mode validates independently of the reveal guard, before token
+resolution, config load, or child spawn. The op argv must be exactly `read`
+plus one `op://` reference: every out-file spelling, global flag, `--`
+separator, unknown dash token, extra or missing reference, second command
+word, and non-read path are refused as `opchain: relay: grammar`. `--value-fd`
+with `--allow-reveal` or `--pass-token` is also refused as `grammar`.
+
+One overall deadline - the `OPCHAIN_OP_TIMEOUT_MS` value - covers token
+resolution, the `op` child, and the descriptor write. Acceptance is a child
+exit 0 inside the deadline; a failed or timed-out child writes nothing to the
+descriptor. A stalled peer or a failed write stops the relay with `write-failed`
+or `deadline`; a prefix may already have been delivered. Relay failures exit 1
+and print exactly one stable identifier on stderr:
+
+| Identifier | Meaning |
+| --- | --- |
+| `opchain: relay: grammar` | Out-of-grammar op argv, out-file spelling, `--allow-reveal` or `--pass-token` mix, non-read path |
+| `opchain: relay: descriptor-not-open` | The fd number does not parse or the descriptor is not open |
+| `opchain: relay: descriptor-standard` | The fd is 0, 1, or 2 |
+| `opchain: relay: descriptor-not-pipe` | The fd is not a pipe or socket (TTY, regular file, directory, device) |
+| `opchain: relay: descriptor-alias` | The fd names the same endpoint as stdout or stderr |
+| `opchain: relay: spawn` | The `op` child could not start |
+| `opchain: relay: config` | The identity's config or profile could not be resolved |
+| `opchain: relay: token` | The identity's token could not be resolved |
+| `opchain: relay: child-timeout` | The `op` child hit the deadline |
+| `opchain: relay: child-failed:<class>` | The child exited nonzero; `<class>` is `denied`, `notfound`, `unreachable`, or `unknown` |
+| `opchain: relay: write-failed` | The descriptor write failed after a possible prefix |
+| `opchain: relay: deadline` | The overall relay deadline expired |
+
+The identifier line carries no appended detail; under `--debug`, metadata such
+as the descriptor number and deadline appears on separately prefixed
+`opchain debug: relay:` lines that never match the identifier pattern. The
+classifier orders permission wording before existence wording before transport
+wording, with `unknown` as the fallback; the child's diagnostics are captured
+privately and never printed. Telemetry (`op.reveal.fd_relay`) records the
+identity, the form id, a byte count, and one outcome from a fixed enum - never
+content. Known limits: a same-user process can deliberately relay and read a
+value, and the descriptor checks cannot bind what the receiving peer does with
+the bytes afterward.
 
 ## Environment handling
 
@@ -133,7 +183,7 @@ then selects that profile explicitly.
 
 | Variable | Default | Effect |
 | --- | --- | --- |
-| `OPCHAIN_OP_TIMEOUT_MS` | `30000` | Deadline for a delegated `op` command. `op run` has no deadline. On timeout opchain exits 1 with a timeout message. |
+| `OPCHAIN_OP_TIMEOUT_MS` | `30000` | Deadline for a delegated `op` command. `op run` has no deadline. Also the overall deadline for the `--value-fd` relay, covering token resolution, the child, and the descriptor write. On timeout opchain exits 1 with a timeout message. |
 | `OPCHAIN_TOKEN_OVERRIDE` | unset | Token source, used only when `--allow-env-token` is passed. |
 | `OPCHAIN_CONFIG_PATH` | `~/.config/opchain/config.toml` | Config path override. |
 | `OPCHAIN_OP_PATH` | `op` | `op` executable path override. |
@@ -146,7 +196,7 @@ The path overrides exist for the test suite and for pointing opchain at instrume
 
 - A delegated `op` command's exit status passes through unchanged.
 - An `op` process ended by a signal exits 128 plus the signal number.
-- opchain's own refusals and errors exit 1. This includes reveal refusals, unknown identities or profiles, config errors, and the `op` timeout.
+- opchain's own refusals and errors exit 1. This includes reveal refusals, unknown identities or profiles, config errors, and the `op` timeout. In `--value-fd` relay mode every failure exits 1 with one `opchain: relay: ...` identifier on stderr; the child's own exit code is not propagated.
 - `op run` needs `--` before the program. Without it, opchain exits 1 and explains how to pass it, unless `--pass-token` is given.
 
 While `op` runs, opchain forwards SIGTERM, SIGINT, and SIGHUP to the `op` process and waits for it to end, so Ctrl+C stops the delegated command instead of orphaning it.

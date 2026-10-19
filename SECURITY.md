@@ -108,6 +108,64 @@ between the identity and `op`. It additionally requires an interactive
 stdin (a TTY); stdout may stay piped. The refusal message names the safe
 alternative and never echoes an argument value.
 
+### The relay route: `--value-fd <n>`
+
+`opchain <identity> --read --value-fd <n> op read <reference>` is the one
+unattended route that moves a secret value off stdout: opchain writes the
+value to inherited descriptor `n` and prints nothing itself. It requires
+`--read` on the same command line, and `--allow-reveal` or `--pass-token`
+alongside `--value-fd` is refused: the relay is the unattended route and
+takes precedence over the interactive override.
+
+Relay mode validates the command line independently of the guard above,
+before token resolution, config loading, or child spawn:
+
+- the op argv is exactly `read` plus one `op://` reference. Every out-file
+  spelling (`-o`, `-o<attached>`, `--out-file`, `--out-file=<value>`, and
+  the next-token spellings), every global flag, any `--` separator, any
+  unknown dash token, zero or multiple references, any second command
+  word, and any non-read path are refused as `opchain: relay: grammar`
+- descriptor checks, fail-closed, in order: `descriptor-not-open` (the
+  number does not parse as a non-negative integer or the descriptor is
+  not open), `descriptor-standard` (0, 1, or 2), `descriptor-not-pipe` (a
+  TTY, regular file, directory, or block device), and
+  `descriptor-alias` (the descriptor names the same underlying pipe or
+  socket endpoint as stdout or stderr, compared by `st_dev`/`st_ino`
+  identity, so a duplicated pipe pointing at stdout is refused exactly
+  like stdout itself)
+
+Both child streams are captured privately and mirrored nowhere, on
+success or on failure. Acceptance is a child exit 0 inside one overall
+deadline (the documented op timeout, `OPCHAIN_OP_TIMEOUT_MS`), which
+also covers token resolution and the descriptor write; only then are the
+buffered bytes written byte-exact to the descriptor, which opchain never
+closes. Every relay failure exits 1 and prints exactly one stable
+identifier line on stderr, with no appended detail (permitted metadata
+such as the descriptor number or deadline appears only on separately
+prefixed `opchain debug: relay:` lines under `--debug`, which never match
+the identifier pattern):
+
+    opchain: relay: grammar
+    opchain: relay: descriptor-not-open
+    opchain: relay: descriptor-standard
+    opchain: relay: descriptor-not-pipe
+    opchain: relay: descriptor-alias
+    opchain: relay: spawn
+    opchain: relay: config
+    opchain: relay: token
+    opchain: relay: child-timeout
+    opchain: relay: child-failed:<denied|notfound|unreachable|unknown>
+    opchain: relay: write-failed
+    opchain: relay: deadline
+
+A child's nonzero exit is classified from its private stderr by ordered
+rules - permission wording first (1Password hides inaccessible vaults
+behind existence wording), then existence, then transport, else
+`unknown` - and the matched text is never printed. The child's own exit
+code is not propagated in relay mode. A write that fails or outlives the
+deadline may have delivered a prefix; opchain stops, discards the rest,
+and reports `write-failed` or `deadline`.
+
 Known limits of this guard, all within the same-user threat model below:
 
 - the TTY gate is a speed bump, not a boundary: a same-user process can fake
@@ -125,6 +183,15 @@ Known limits of this guard, all within the same-user threat model below:
   lexical `/dev/` prefixes are checked
 - command aliases are matched from a fixed list (`items`, `documents`, `sa`,
   `connect tokens`), so an alias a future op release adds may not be covered
+- a same-user caller can deliberately create a pipe, relay a value through
+  `--value-fd`, and read it: like the TTY gate, the relay route is a speed
+  bump against accidents, not a boundary against a determined same-user
+  process
+- the `--value-fd` descriptor checks bind what opchain writes to - never
+  its stdout or stderr endpoint (by number or duplicated endpoint), never
+  a TTY, never a regular file - but cannot bind what the receiving peer
+  does with the bytes after it reads them; that is the caller's side of
+  the contract
 
 Structure-only inspection goes through `item-structure`, which prints
 labels, types, value presence, and value length - never a value.
@@ -142,6 +209,10 @@ Allowed telemetry:
 - provider attempts and outcomes
 - reveal-guard decisions (`op.reveal.refused` / `op.reveal.allowed`) with
   identity, form id, and refusal reason only
+- relay decisions (`op.reveal.fd_relay`) with identity, the form id
+  (`read`), a byte count, and one outcome from the fixed set `written`,
+  `refused:<check>`, `child-failed:<class>`, `child-timeout`,
+  `write-failed`, `deadline`, `spawn`, `token`, `config`
 - command classification
 - exit code
 - duration
