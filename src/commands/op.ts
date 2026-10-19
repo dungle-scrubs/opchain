@@ -9,6 +9,7 @@ import {
 } from "../op/reveal-guard.ts";
 
 import { planRunEnv } from "../op/run-env.ts";
+import { runValueRelay } from "../op/relay-run.ts";
 
 import { buildRunChildEnv, buildTokenChildEnv } from "../cli/child-env.ts";
 import type { CommandRequest } from "../cli/command-request.ts";
@@ -265,6 +266,12 @@ export async function runIdentityOp(
 ): Promise<CommandResult> {
   if (request.kind !== "identity") {
     return commandFailure("Invalid command shape for op.\n");
+  }
+
+  // Relay mode (`--value-fd`) validates the command line on its own,
+  // independently of the reveal guard below.
+  if (request.options.valueFd !== undefined) {
+    return runValueRelay(request);
   }
 
   const { identityName, options } = request;

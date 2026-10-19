@@ -1,0 +1,267 @@
+import { describe, expect, test } from "bun:test";
+
+import { runRelay } from "../helpers/run-relay.ts";
+
+const SYNTHETIC_VALUE = "synthetic-relay-value-61";
+const REFERENCE = "op://Infra/reflect-intake-restic/password";
+const DENIED_STDERR =
+  'vault "Infra" isn\'t in this account or you don\'t have access to it';
+
+type TelemetryEvent = {
+  readonly attributes: Record<string, unknown>;
+  readonly name: string;
+};
+
+/**
+ * Parses newline-delimited JSON telemetry from mixed stderr text.
+ *
+ * @param stderr - Raw stderr that may mix failure lines and telemetry.
+ * @returns {readonly TelemetryEvent[]} Parsed telemetry events.
+ */
+function parseTelemetryEvents(stderr: string): readonly TelemetryEvent[] {
+  return stderr
+    .split("\n")
+    .filter((line) => line.startsWith("{"))
+    .map((line) => JSON.parse(line) as TelemetryEvent);
+}
+
+describe("op --value-fd failure paths", () => {
+  test("child failure writes nothing and prints only the classified identifier", async () => {
+    const run = await runRelay(
+      ["primary", "--read", "--value-fd", "3", "op", "read", REFERENCE],
+      {
+        env: {
+          OPCHAIN_TEST_OP_READ_STDERR: DENIED_STDERR,
+          OPCHAIN_TEST_OP_READ_EXIT_CODE: "3",
+        },
+      },
+    );
+
+    expect(run.result).toEqual({ code: 1, signal: null });
+    expect(run.stderrText).toBe("opchain: relay: child-failed:denied\n");
+    expect(run.valueBytes.length).toBe(0);
+    expect(run.stderrText).not.toContain("Infra");
+    expect(run.stderrText).not.toContain("account");
+  });
+
+  test("classifies notfound, unreachable, and unknown diagnostics", async () => {
+    const cases: readonly [string, string][] = [
+      [
+        '"op://Infra/reflect-intake-restic/password" isn\'t a field in the item',
+        "child-failed:notfound",
+      ],
+      ["POST: dial tcp: i/o timeout", "child-failed:unreachable"],
+      ["dial tcp: lookup example.com: no such host", "child-failed:unreachable"],
+      ["something unexpected", "child-failed:unknown"],
+    ];
+
+    for (const [diagnostic, identifier] of cases) {
+      const run = await runRelay(
+        ["primary", "--read", "--value-fd", "3", "op", "read", REFERENCE],
+        {
+          env: {
+            OPCHAIN_TEST_OP_READ_STDERR: diagnostic,
+            OPCHAIN_TEST_OP_READ_EXIT_CODE: "1",
+          },
+        },
+      );
+
+      expect(run.result).toEqual({ code: 1, signal: null });
+      expect(run.stderrText).toBe(`opchain: relay: ${identifier}\n`);
+      expect(run.valueBytes.length).toBe(0);
+    }
+  });
+
+  test("child timeout reports child-timeout and writes nothing", async () => {
+    const run = await runRelay(
+      ["primary", "--read", "--value-fd", "3", "op", "read", REFERENCE],
+      {
+        env: {
+          OPCHAIN_OP_TIMEOUT_MS: "1500",
+          OPCHAIN_TEST_OP_SLEEP_MS: "30000",
+        },
+      },
+    );
+
+    expect(run.result).toEqual({ code: 1, signal: null });
+    expect(run.stderrText).toBe("opchain: relay: child-timeout\n");
+    expect(run.valueBytes.length).toBe(0);
+  });
+
+  test("a stalled token resolution hits the deadline, proving cancellable plumbing", async () => {
+    const startedAt = Date.now();
+    const run = await runRelay(
+      ["primary", "--read", "--value-fd", "3", "op", "read", REFERENCE],
+      {
+        env: {
+          OPCHAIN_OP_TIMEOUT_MS: "1500",
+          OPCHAIN_TEST_SECURITY_SLEEP_MS: "30000",
+          OPCHAIN_TEST_OP_SLEEP_MS: "30000",
+        },
+      },
+    );
+    const elapsedMs = Date.now() - startedAt;
+
+    expect(elapsedMs).toBeLessThan(15_000);
+    expect(run.result).toEqual({ code: 1, signal: null });
+    expect(run.stderrText).toBe("opchain: relay: deadline\n");
+    expect(run.valueBytes.length).toBe(0);
+  });
+
+  test("a peer that stalls mid-value hits the deadline", async () => {
+    const run = await runRelay(
+      ["primary", "--read", "--value-fd=3", "op", "read", REFERENCE],
+      {
+        env: {
+          OPCHAIN_OP_TIMEOUT_MS: "1500",
+          OPCHAIN_TEST_OP_RELAY_VALUE_BYTES: "262144",
+        },
+        peerMode: "stall-after-first-chunk",
+      },
+    );
+
+    expect(run.result).toEqual({ code: 1, signal: null });
+    expect(run.stderrText).toBe("opchain: relay: deadline\n");
+    expect(run.valueBytes.length).toBeGreaterThan(0);
+    expect(run.valueBytes.length).toBeLessThan(262_145);
+  });
+
+  test("a peer that closes mid-value gets write-failed after a prefix", async () => {
+    const run = await runRelay(
+      ["primary", "--read", "--value-fd=3", "op", "read", REFERENCE],
+      {
+        env: { OPCHAIN_TEST_OP_RELAY_VALUE_BYTES: "262144" },
+        peerMode: "destroy-after-first-chunk",
+      },
+    );
+
+    expect(run.result).toEqual({ code: 1, signal: null });
+    expect(run.stderrText).toBe("opchain: relay: write-failed\n");
+    expect(run.valueBytes.length).toBeGreaterThan(0);
+    expect(run.valueBytes.length).toBeLessThan(262_145);
+  });
+
+  test("an unknown identity reports config without running op", async () => {
+    const run = await runRelay([
+      "not-an-identity",
+      "--read",
+      "--value-fd",
+      "3",
+      "op",
+      "read",
+      REFERENCE,
+    ]);
+
+    expect(run.result).toEqual({ code: 1, signal: null });
+    expect(run.stderrText).toBe("opchain: relay: config\n");
+  });
+
+  test("an unreadable token reports token", async () => {
+    const run = await runRelay(
+      ["primary", "--read", "--value-fd", "3", "op", "read", REFERENCE],
+      {
+        env: {
+          OPCHAIN_TEST_SECURITY_EXIT_CODE: "1",
+          OPCHAIN_TEST_SECURITY_STDERR: "could not read keychain",
+        },
+      },
+    );
+
+    expect(run.result).toEqual({ code: 1, signal: null });
+    expect(run.stderrText).toBe("opchain: relay: token\n");
+    expect(run.stderrText).not.toContain("keychain");
+  });
+
+  test("a missing op binary reports spawn", async () => {
+    const run = await runRelay(
+      ["primary", "--read", "--value-fd", "3", "op", "read", REFERENCE],
+      { env: { OPCHAIN_OP_PATH: "/nonexistent-opchain-op" } },
+    );
+
+    expect(run.result).toEqual({ code: 1, signal: null });
+    expect(run.stderrText).toBe("opchain: relay: spawn\n");
+  });
+
+  test("telemetry carries byte counts and the outcome enum only", async () => {
+    const run = await runRelay(
+      [
+        "--debug",
+        "--debug-format",
+        "json",
+        "primary",
+        "--read",
+        "--value-fd",
+        "3",
+        "op",
+        "read",
+        REFERENCE,
+      ],
+      { env: { OPCHAIN_TEST_OP_RELAY_VALUE: SYNTHETIC_VALUE } },
+    );
+
+    expect(run.result).toEqual({ code: 0, signal: null });
+
+    const relayEvent = parseTelemetryEvents(run.stderrText).find(
+      (event) => event.name === "op.reveal.fd_relay",
+    );
+
+    expect(relayEvent?.attributes).toEqual({
+      form: "read",
+      identity: "primary",
+      outcome: "written",
+      value_bytes: SYNTHETIC_VALUE.length + 1,
+    });
+    expect(run.stderrText).not.toContain(SYNTHETIC_VALUE);
+  });
+
+  test("telemetry records refused descriptor outcomes", async () => {
+    const run = await runRelay([
+      "--debug",
+      "--debug-format",
+      "json",
+      "primary",
+      "--read",
+      "--value-fd",
+      "1",
+      "op",
+      "read",
+      REFERENCE,
+    ]);
+
+    expect(run.result).toEqual({ code: 1, signal: null });
+
+    const relayEvent = parseTelemetryEvents(run.stderrText).find(
+      (event) => event.name === "op.reveal.fd_relay",
+    );
+
+    expect(relayEvent?.attributes).toEqual({
+      form: "read",
+      identity: "primary",
+      outcome: "refused:descriptor-standard",
+      value_bytes: 0,
+    });
+  });
+
+  test("debug metadata rides a separately prefixed line that never matches the anchor", async () => {
+    const run = await runRelay(
+      [
+        "--debug",
+        "primary",
+        "--read",
+        "--value-fd",
+        "1",
+        "op",
+        "read",
+        REFERENCE,
+      ],
+    );
+
+    expect(run.result).toEqual({ code: 1, signal: null });
+    expect(run.stderrText).toContain("opchain: relay: descriptor-standard\n");
+    expect(run.stderrText).toMatch(/^opchain debug: relay: .*$/m);
+    const anchoredLines = run.stderrText
+      .split("\n")
+      .filter((line) => /^opchain: relay: [a-z-]+(:[a-z-]+)?$/.test(line));
+    expect(anchoredLines).toEqual(["opchain: relay: descriptor-standard"]);
+  });
+});

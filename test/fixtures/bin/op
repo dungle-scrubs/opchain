@@ -94,7 +94,17 @@ if [[ "$1" == "read" && $# -ge 2 ]]; then
     exit "${OPCHAIN_TEST_OP_READ_EXIT_CODE:-1}"
   fi
 
-  printf 'secret ok\n'
+  if [[ -n "${OPCHAIN_TEST_OP_RELAY_WARN_STDERR:-}" ]]; then
+    printf '%s\n' "$OPCHAIN_TEST_OP_RELAY_WARN_STDERR" >&2
+  fi
+
+  if [[ -n "${OPCHAIN_TEST_OP_RELAY_VALUE_BYTES:-}" ]]; then
+    head -c "$OPCHAIN_TEST_OP_RELAY_VALUE_BYTES" /dev/zero | tr '\0' 'x'
+    printf '\n'
+    exit 0
+  fi
+
+  printf '%s\n' "${OPCHAIN_TEST_OP_RELAY_VALUE:-secret ok}"
   exit 0
 fi
 
