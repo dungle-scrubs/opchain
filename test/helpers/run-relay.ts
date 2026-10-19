@@ -16,7 +16,8 @@ export type RelayStdio3 =
   | { readonly kind: "pipe" }
   | { readonly kind: "closed" }
   | { readonly kind: "duplicate-of"; readonly fd: 1 | 2 }
-  | { readonly kind: "file-path"; readonly path: string };
+  | { readonly kind: "file-path"; readonly path: string }
+  | { readonly kind: "raw-fd"; readonly fd: number };
 
 export type RelayRunResult = {
   readonly homePath: string;
@@ -86,6 +87,9 @@ export async function runRelay(
     case "file-path":
       fileFd = openSync(options.stdio3.path, "w");
       stdio3 = fileFd;
+      break;
+    case "raw-fd":
+      stdio3 = options.stdio3.fd;
       break;
   }
 

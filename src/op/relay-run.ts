@@ -53,10 +53,10 @@ const STOP_SIGNALS: readonly NodeJS.Signals[] = [
 const WRITE_CHUNK_BYTES = 64 * 1024;
 
 /**
- * How long the write loop waits between poll turns when the descriptor
- * reports it cannot accept more bytes yet.
+ * Backoff between write retries when the descriptor reports it cannot
+ * accept more bytes yet (EAGAIN/EWOULDBLOCK).
  */
-const WRITE_POLL_INTERVAL_MS = 20;
+const WRITE_RETRY_BACKOFF_MS = 20;
 
 /**
  * Largest amount of child stderr retained for classification. The child's
@@ -327,17 +327,20 @@ function raceWithDeadline<T>(
 }
 
 /**
- * Writes the buffered value bytes to the descriptor, byte-exact, in a
- * deadline-aware non-blocking loop with poll.
+ * Writes the buffered value bytes to the descriptor, byte-exact, as
+ * deadline-raced asynchronous writes.
  *
- * Each chunked write either advances, reports EAGAIN/EWOULDBLOCK (the
- * descriptor cannot accept more bytes yet - the loop polls and retries
- * until the deadline), reports EINTR (retried), or fails (EPIPE and
- * friends - `write-failed`). A peer that stops draining therefore hits
- * the deadline rather than erroring or outliving it, and the event loop
- * stays responsive throughout. A prefix may already have been delivered
- * when a write fails or the deadline expires; the descriptor is never
- * closed - the caller owns it.
+ * Bun exposes no fcntl, so the descriptor cannot be switched to a
+ * non-blocking mode with a true readiness poll; instead each chunked
+ * write runs off the main thread and is raced against the overall
+ * deadline. Each write either advances, reports EAGAIN/EWOULDBLOCK
+ * (retried after a short backoff until the deadline), reports EINTR
+ * (retried), or fails (EPIPE and friends - `write-failed`). A peer
+ * that never drains therefore ends at the deadline rather than
+ * erroring or outliving it - proven by the blocking-FIFO fixture -
+ * and the event loop stays responsive throughout. A prefix may
+ * already have been delivered when a write fails or the deadline
+ * expires; the descriptor is never closed - the caller owns it.
  *
  * @param fd - Private descriptor number to write to.
  * @param bytes - Buffered value exactly as `op` printed it.
@@ -371,13 +374,13 @@ async function writeValueToDescriptor(
       if (code === "EAGAIN" || code === "EWOULDBLOCK" || code === "EINTR") {
         // Poll: the descriptor may accept bytes again at any moment, so
         // wait one interval and retry, bounded by the deadline.
-        const pollMs = Math.min(
-          WRITE_POLL_INTERVAL_MS,
+        const retryDelayMs = Math.min(
+          WRITE_RETRY_BACKOFF_MS,
           Math.max(0, deadlineAt - Date.now()),
         );
-        if (pollMs > 0) {
+        if (retryDelayMs > 0) {
           await new Promise((resolve) => {
-            setTimeout(resolve, pollMs);
+            setTimeout(resolve, retryDelayMs);
           });
         }
         continue;

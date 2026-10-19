@@ -169,13 +169,17 @@ and reports `write-failed` or `deadline`.
 ### The relay's process lifecycle is the caller's process group
 
 The relay's `op` child and its token provider run in opchain's own
-process group, never detached. The caller owns the group: start
-opchain in its own process group (for example `setpgid`) and kill the
-whole group when the read ends - success, failure, or cancellation -
-so nothing a read started can outlive it, including after a SIGKILL of
-opchain itself. Opchain's internal deadline kills its direct child
-with SIGTERM, then SIGKILL after a grace period, and never sends a
-kill to an already-exited child.
+process group, never detached. The caller owns the group, with one
+exact recipe: start opchain in its own process group (`Setpgid`), and
+send `SIGKILL` to `-pgid` on cancellation and again after `Wait`
+returns - before waiting for the inherited pipe's EOF - on every read,
+success or failure. Nothing a read started can then outlive it,
+including after a SIGKILL of opchain itself: a descendant may hold the
+child's pipes past the child's own exit, and the group kill is what
+reaps it. Opchain's internal deadline kills its direct child with
+SIGTERM, then SIGKILL after a grace period, never signals an
+already-exited child, and settles at the deadline even when a
+pipe-holding descendant delays the child's close event.
 
 Known limits of this guard, all within the same-user threat model below:
 

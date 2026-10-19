@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync } from "node:fs";
+import {
+  closeSync,
+  constants as fsConstants,
+  existsSync,
+  mkdtempSync,
+  openSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -172,6 +178,38 @@ describe("op --value-fd failure paths", () => {
     expect(elapsedMs).toBeLessThan(15_000);
     expect(run.valueBytes.length).toBeGreaterThan(0);
     expect(run.valueBytes.length).toBeLessThan(262_145);
+  }, 25_000);
+
+  test("an explicitly blocking inherited pipe with a silent peer ends at the deadline", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "opchain-relay-fifo-"));
+    const fifoPath = join(dir, "value.fifo");
+    spawnSync("mkfifo", [fifoPath]);
+
+    // The read end is held open and never read; the write end is passed
+    // as the inherited descriptor - a genuinely blocking FIFO, not a
+    // Bun-created pipe socket.
+    const readFd = openSync(fifoPath, fsConstants.O_RDONLY | fsConstants.O_NONBLOCK);
+    const writeFd = openSync(fifoPath, fsConstants.O_WRONLY);
+    const startedAt = Date.now();
+
+    const run = await runRelay(
+      ["primary", "--read", "--value-fd", "3", "op", "read", REFERENCE],
+      {
+        env: {
+          OPCHAIN_OP_TIMEOUT_MS: "3000",
+          OPCHAIN_TEST_OP_RELAY_VALUE_BYTES: "262144",
+        },
+        stdio3: { kind: "raw-fd", fd: writeFd },
+      },
+    );
+    const elapsedMs = Date.now() - startedAt;
+    closeSync(readFd);
+    closeSync(writeFd);
+
+    expect(run.result).toEqual({ code: 1, signal: null });
+    expect(run.stderrText).toBe("opchain: relay: deadline\n");
+    expect(elapsedMs).toBeGreaterThanOrEqual(2_800);
+    expect(elapsedMs).toBeLessThan(15_000);
   }, 25_000);
 
   test("a child that writes the value before a nonzero exit delivers nothing", async () => {
