@@ -228,7 +228,7 @@ function runRelayOpChild(
 /**
  * One deadline-aware write raced against the relay deadline.
  */
-type DeadlineWriteOutcome<T> =
+type DeadlineOutcome<T> =
   | { readonly deadline: true }
   | { readonly error: Error }
   | { readonly value: T };
@@ -272,17 +272,17 @@ function writeDescriptorChunk(
 }
 
 /**
- * Races one write promise against the relay deadline without leaving the
- * deadline timer alive after the write settles.
+ * Races one promise against the relay deadline without leaving the
+ * deadline timer alive after the promise settles.
  *
- * @param promise - One descriptor write.
+ * @param promise - One deadline-bounded operation.
  * @param deadlineAt - Absolute deadline timestamp.
- * @returns {Promise<DeadlineWriteOutcome<T>>} The write's value, its error, or the deadline.
+ * @returns {Promise<DeadlineOutcome<T>>} The operation's value, its error, or the deadline.
  */
-function raceWriteWithDeadline<T>(
+function raceWithDeadline<T>(
   promise: Promise<T>,
   deadlineAt: number,
-): Promise<DeadlineWriteOutcome<T>> {
+): Promise<DeadlineOutcome<T>> {
   return new Promise((resolve) => {
     const delay = Math.max(0, deadlineAt - Date.now());
     const timer = setTimeout(() => {
@@ -330,7 +330,7 @@ async function writeValueToDescriptor(
 
     const chunkEnd = Math.min(offset + WRITE_CHUNK_BYTES, bytes.length);
     const chunk = bytes.subarray(offset, chunkEnd);
-    const outcome = await raceWriteWithDeadline(
+    const outcome = await raceWithDeadline(
       writeDescriptorChunk(fd, chunk),
       deadlineAt,
     );
@@ -453,9 +453,26 @@ export async function runValueRelay(
   const remainingMs = (): number => Math.max(0, deadlineAt - Date.now());
 
   // Identity resolution, staged so config/profile failures and token
-  // failures carry their own identifiers.
-  const configContext = await loadConfigContext(options);
-  if (!configContext.ok) {
+  // failures carry their own identifiers. The overall deadline covers
+  // configuration loading: a stalled config read expires into `deadline`
+  // instead of outliving the relay.
+  const configContext = await raceWithDeadline(
+    loadConfigContext(options),
+    deadlineAt,
+  );
+  if ("deadline" in configContext) {
+    return finish({ kind: "deadline" }, 0, { deadlineMs, fd });
+  }
+
+  if ("error" in configContext) {
+    return finish({ kind: "resolution", resolutionStage: "config" }, 0, {
+      deadlineMs,
+      fd,
+    });
+  }
+
+  const configResult = configContext.value;
+  if (!configResult.ok) {
     return finish({ kind: "resolution", resolutionStage: "config" }, 0, {
       deadlineMs,
       fd,
@@ -463,7 +480,7 @@ export async function runValueRelay(
   }
 
   const resolvedProfile = resolveOpProfile(
-    configContext.value.config,
+    configResult.value.config,
     identityName,
     "read_safe",
     options.accessOverride,

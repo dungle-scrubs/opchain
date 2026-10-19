@@ -1,4 +1,8 @@
 import { describe, expect, test } from "bun:test";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { runRelay } from "../helpers/run-relay.ts";
 
@@ -148,6 +152,28 @@ describe("op --value-fd failure paths", () => {
     expect(run.valueBytes.length).toBeGreaterThan(0);
     expect(run.valueBytes.length).toBeLessThan(262_145);
   }, 15_000);
+
+  test("a stalled config load hits the overall deadline", async () => {
+    const homePath = mkdtempSync(join(tmpdir(), "opchain-relay-cfg-"));
+    const fifoPath = join(homePath, "config.fifo");
+    spawnSync("mkfifo", [fifoPath]);
+
+    const startedAt = Date.now();
+    const run = await runRelay(
+      ["primary", "--read", "--value-fd", "3", "op", "read", REFERENCE],
+      {
+        env: {
+          OPCHAIN_CONFIG_PATH: fifoPath,
+          OPCHAIN_OP_TIMEOUT_MS: "1500",
+        },
+      },
+    );
+    const elapsedMs = Date.now() - startedAt;
+
+    expect(elapsedMs).toBeLessThan(15_000);
+    expect(run.result).toEqual({ code: 1, signal: null });
+    expect(run.stderrText).toBe("opchain: relay: deadline\n");
+  }, 20_000);
 
   test("an unknown identity reports config without running op", async () => {
     const run = await runRelay([
