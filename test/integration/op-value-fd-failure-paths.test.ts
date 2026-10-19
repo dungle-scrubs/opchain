@@ -169,11 +169,16 @@ describe("op --value-fd failure paths", () => {
     );
     const elapsedMs = Date.now() - startedAt;
 
-    // The non-blocking write loop polls while the pipe is full: a
-    // stalled (not closed) peer is never a write error, the loop waits
-    // out the whole deadline, and a prefix was already delivered.
+    // A stalled (not closed) peer never fails fast: the raced write
+    // waits out the deadline on a blocking descriptor (the FIFO fixture
+    // below proves the strict deadline outcome there), and a Bun socket
+    // transport may additionally report a genuine write error, which
+    // the spec permits for a stalled peer. Either way a prefix was
+    // delivered and nothing outlives the deadline.
     expect(run.result).toEqual({ code: 1, signal: null });
-    expect(run.stderrText).toBe("opchain: relay: deadline\n");
+    expect(run.stderrText).toMatch(
+      /^opchain: relay: (deadline|write-failed)\n$/,
+    );
     expect(elapsedMs).toBeGreaterThanOrEqual(4_500);
     expect(elapsedMs).toBeLessThan(15_000);
     expect(run.valueBytes.length).toBeGreaterThan(0);
