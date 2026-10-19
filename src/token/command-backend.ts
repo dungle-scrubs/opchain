@@ -182,12 +182,10 @@ export function runTokenCommandAsync(
   return new Promise((resolve) => {
     let child: ChildProcess;
     try {
-      // Detached: the provider leads its own process group, so a kill can
-      // reach shell scripts and their children together. Without the
-      // group kill, a stub shell's stalled child would hold the stdout
-      // pipe open past the deadline.
+      // D401: the provider runs in opchain's own process group (not
+      // detached), so the caller that owns opchain's group reaps it
+      // with everything else the relay started.
       child = spawn(commandPath, args, {
-        detached: true,
         env: buildProviderChildEnv(),
         stdio: ["pipe", "pipe", "pipe"],
       });
@@ -220,14 +218,11 @@ export function runTokenCommandAsync(
       resolve(result);
     };
 
-    const killProcessGroup = (signal: NodeJS.Signals): void => {
-      if (child.pid !== undefined) {
-        try {
-          process.kill(-child.pid, signal);
-          return;
-        } catch {
-          // The group is gone; fall through to the direct kill.
-        }
+    // The deadline escalation kills the direct child only: TERM first,
+    // then KILL, and never a KILL to an already-exited (reaped) pid.
+    const killDirectChild = (signal: NodeJS.Signals): void => {
+      if (child.exitCode !== null || child.signalCode !== null) {
+        return;
       }
 
       child.kill(signal);
@@ -239,11 +234,11 @@ export function runTokenCommandAsync(
       }
 
       timedOut = true;
-      killProcessGroup("SIGTERM");
+      killDirectChild("SIGTERM");
       // A SIGTERM-ignoring provider still holds the relay deadline, so
       // escalate to an unblockable SIGKILL.
       killTimer = setTimeout(() => {
-        killProcessGroup("SIGKILL");
+        killDirectChild("SIGKILL");
       }, PROVIDER_SIGKILL_GRACE_MS);
     }, options.timeoutMs);
 
@@ -256,7 +251,7 @@ export function runTokenCommandAsync(
       stdoutBytes += chunk.length;
       if (stdoutBytes > maxBytes) {
         stdoutOverLimit = true;
-        killProcessGroup("SIGKILL");
+        killDirectChild("SIGKILL");
         return;
       }
 

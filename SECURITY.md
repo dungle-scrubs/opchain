@@ -166,6 +166,17 @@ code is not propagated in relay mode. A write that fails or outlives the
 deadline may have delivered a prefix; opchain stops, discards the rest,
 and reports `write-failed` or `deadline`.
 
+### The relay's process lifecycle is the caller's process group
+
+The relay's `op` child and its token provider run in opchain's own
+process group, never detached. The caller owns the group: start
+opchain in its own process group (for example `setpgid`) and kill the
+whole group when the read ends - success, failure, or cancellation -
+so nothing a read started can outlive it, including after a SIGKILL of
+opchain itself. Opchain's internal deadline kills its direct child
+with SIGTERM, then SIGKILL after a grace period, and never sends a
+kill to an already-exited child.
+
 Known limits of this guard, all within the same-user threat model below:
 
 - the TTY gate is a speed bump, not a boundary: a same-user process can fake

@@ -1,6 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [[ -n "${OPCHAIN_TEST_OP_PID_LOG:-}" ]]; then
+  printf '%s\n' "$$" > "$OPCHAIN_TEST_OP_PID_LOG"
+fi
+
+if [[ -n "${OPCHAIN_TEST_OP_IGNORE_TERM:-}" ]]; then
+  # A child that survives SIGTERM: the relay's deadline escalation must
+  # escalate to SIGKILL. The loop's sleep closes its descriptors so the
+  # orphan cannot hold the child pipes open.
+  trap '' TERM
+  while :; do
+    sleep 1 <&- >&- 2>&-
+  done
+fi
+
 if [[ -n "${OPCHAIN_TEST_OP_LOG:-}" ]]; then
   {
     printf 'args=%s\n' "$*"
@@ -16,7 +30,7 @@ if [[ -n "${OPCHAIN_TEST_OP_LOG:-}" ]]; then
 fi
 
 if [[ -n "${OPCHAIN_TEST_OP_SLEEP_MS:-}" ]]; then
-  sleep "$(awk "BEGIN { print ${OPCHAIN_TEST_OP_SLEEP_MS} / 1000 }")"
+  sleep "$(awk "BEGIN { print ${OPCHAIN_TEST_OP_SLEEP_MS} / 1000 }")" <&- >&- 2>&-
 fi
 
 if [[ "$*" == "vault list" ]]; then

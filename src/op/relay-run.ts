@@ -102,12 +102,12 @@ function runRelayOpChild(
   env: NodeJS.ProcessEnv,
 ): Promise<RelayChildResult> {
   return new Promise((resolve) => {
-    // Detached: the op child leads its own process group, so the timeout
-    // kill reaches helper processes it spawned. Without the group kill,
-    // a killed child's orphaned grandchild would hold the output pipes
-    // open and the relay would outlive its own deadline.
+    // D401: the caller owns the process group. The relay child runs in
+    // opchain's own process group (not detached), so a caller that
+    // starts opchain with Setpgid and kills the group when the read
+    // ends reaps everything the read started - including after a
+    // SIGKILL of opchain itself.
     const child: ChildProcess = spawn(resolveOpPath(), opArgs, {
-      detached: true,
       env,
       stdio: ["inherit", "pipe", "pipe"],
     });
@@ -118,14 +118,11 @@ function runRelayOpChild(
     let timedOut = false;
     let killTimer: ReturnType<typeof setTimeout> | undefined;
 
-    const killProcessGroup = (signal: NodeJS.Signals): void => {
-      if (child.pid !== undefined) {
-        try {
-          process.kill(-child.pid, signal);
-          return;
-        } catch {
-          // The group is gone; fall through to the direct kill.
-        }
+    // The deadline escalation kills the direct child only: TERM first,
+    // then KILL, and never a KILL to an already-exited (reaped) pid.
+    const killDirectChild = (signal: NodeJS.Signals): void => {
+      if (child.exitCode !== null || child.signalCode !== null) {
+        return;
       }
 
       child.kill(signal);
@@ -134,7 +131,7 @@ function runRelayOpChild(
     const signalForwards = new Map<NodeJS.Signals, () => void>();
     for (const stopSignal of STOP_SIGNALS) {
       const forward = (): void => {
-        child.kill(stopSignal);
+        killDirectChild(stopSignal);
       };
       process.on(stopSignal, forward);
       signalForwards.set(stopSignal, forward);
@@ -159,13 +156,13 @@ function runRelayOpChild(
             }
 
             timedOut = true;
-            killProcessGroup("SIGTERM");
+            killDirectChild("SIGTERM");
             killTimer = setTimeout(() => {
               if (settled) {
                 return;
               }
 
-              killProcessGroup("SIGKILL");
+              killDirectChild("SIGKILL");
             }, OP_SIGKILL_GRACE_MS);
           }, timeoutMs);
 
