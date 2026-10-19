@@ -412,7 +412,7 @@ describe("parseCliOptions", () => {
     expect(result.parseError).toBeUndefined();
   });
 
-  test("fails closed when --value-fd has no value", () => {
+  test("keeps relay routing when --value-fd has no value", () => {
     const result = parseCliOptions([
       "human",
       "--read",
@@ -422,7 +422,11 @@ describe("parseCliOptions", () => {
       "op://Vault/Item/field",
     ]);
 
-    expect(result.parseError).toBe("Missing value for --value-fd.");
+    // The relay renders the anchored descriptor-not-open identifier
+    // instead of the generic parser message.
+    expect(result.parseError).toBeUndefined();
+    expect(result.valueFdIntent).toBe(true);
+    expect(result.valueFdMalformed).toBe(true);
   });
 });
 

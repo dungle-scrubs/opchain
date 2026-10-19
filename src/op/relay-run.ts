@@ -425,6 +425,12 @@ export async function runValueRelay(
     return finish({ check: command.check, kind: "refused" }, 0);
   }
 
+  // A parse that failed on another flag while --value-fd was present
+  // is a malformed relay command line, not a malformed descriptor.
+  if (rawValueFd === "" && options.valueFdMalformed !== true) {
+    return finish({ check: "grammar", kind: "refused" }, 0);
+  }
+
   // Descriptor checks, fail-closed, in order.
   const fd = parseRelayFdNumber(rawValueFd);
   if (fd === null) {

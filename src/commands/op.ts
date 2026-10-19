@@ -269,8 +269,10 @@ export async function runIdentityOp(
   }
 
   // Relay mode (`--value-fd`) validates the command line on its own,
-  // independently of the reveal guard below.
-  if (request.options.valueFd !== undefined) {
+  // independently of the reveal guard below. Intent alone is enough:
+  // even a line option parsing refused routes here, so the refusal
+  // renders as one anchored relay identifier.
+  if (request.options.valueFd !== undefined || request.options.valueFdIntent === true) {
     return runValueRelay(request);
   }
 

@@ -15,6 +15,70 @@ const SYNTHETIC_VALUE = "synthetic-relay-value-61";
 const REFERENCE = "op://Infra/reflect-intake-restic/password";
 
 describe("op --value-fd relay", () => {
+  describe("parser refusals render anchored relay identifiers", () => {
+    test("forbidden --read with --write combination gives grammar", async () => {
+      const run = await runRelay([
+        "primary",
+        "--read",
+        "--write",
+        "--value-fd",
+        "3",
+        "op",
+        "read",
+        REFERENCE,
+      ]);
+
+      expect(run.result).toEqual({ code: 1, signal: null });
+      expect(run.stderrText).toBe("opchain: relay: grammar\n");
+      expect(existsSync(run.opLogPath)).toBe(false);
+    });
+
+    test("missing descriptor value gives descriptor-not-open", async () => {
+      const run = await runRelay([
+        "primary",
+        "--read",
+        "--value-fd",
+        "op",
+        "read",
+        REFERENCE,
+      ]);
+
+      expect(run.result).toEqual({ code: 1, signal: null });
+      expect(run.stderrText).toBe("opchain: relay: descriptor-not-open\n");
+      expect(existsSync(run.opLogPath)).toBe(false);
+    });
+
+    test("negative descriptor value gives descriptor-not-open", async () => {
+      const run = await runRelay([
+        "primary",
+        "--read",
+        "--value-fd",
+        "-1",
+        "op",
+        "read",
+        REFERENCE,
+      ]);
+
+      expect(run.result).toEqual({ code: 1, signal: null });
+      expect(run.stderrText).toBe("opchain: relay: descriptor-not-open\n");
+    });
+
+    test("another flag's missing value gives grammar", async () => {
+      const run = await runRelay([
+        "primary",
+        "--value-fd",
+        "3",
+        "--profile",
+        "op",
+        "read",
+        REFERENCE,
+      ]);
+
+      expect(run.result).toEqual({ code: 1, signal: null });
+      expect(run.stderrText).toBe("opchain: relay: grammar\n");
+    });
+  });
+
   describe("argument passthrough without relay mode", () => {
     test("delivers wrapped-program arguments after op byte for byte", async () => {
       const run = await runRelay([

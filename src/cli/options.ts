@@ -38,6 +38,10 @@ export type CliOptions = {
   readonly help: boolean;
   readonly parseError?: string;
   readonly valueFd?: string;
+  /** True when a --value-fd spelling appeared in the op option prefix. */
+  readonly valueFdIntent?: boolean;
+  /** True when option parsing failed on the --value-fd value itself. */
+  readonly valueFdMalformed?: boolean;
 };
 
 type ParsedIdentityOpCommand = {
@@ -49,6 +53,10 @@ type ParsedIdentityOpCommand = {
   readonly explicitProfile: string | undefined;
   readonly parseError?: string;
   readonly valueFd: string | undefined;
+  /** True when a --value-fd spelling appeared in the op option prefix. */
+  readonly valueFdIntent?: boolean;
+  /** True when the parse failed on the --value-fd value itself. */
+  readonly valueFdMalformed?: boolean;
 };
 
 /**
@@ -80,15 +88,26 @@ function buildIdentityOpCandidate(
   });
 
   if (!parsedFlags.ok) {
+    // A relay-intent line keeps its routing even when parsing fails, so
+    // the relay renders one anchored identifier instead of the generic
+    // parser message. The read/write intent is recovered from the raw
+    // tokens so the relay grammar still sees the real flags.
+    const valueFdIntent = flagTokens.includes("--value-fd");
+    const hasRead = flagTokens.includes("--read");
+    const hasWrite = flagTokens.includes("--write");
     return {
-      accessOverride: undefined,
+      accessOverride:
+        hasRead && !hasWrite ? "read" : hasWrite && !hasRead ? "write" : undefined,
       allowEnvToken: false,
       allowReveal: false,
       passToken: false,
       commandArgs: [identity, "op", ...opArgs],
       explicitProfile: undefined,
-      parseError: parsedFlags.error.message,
+      parseError: valueFdIntent ? undefined : parsedFlags.error.message,
       valueFd: undefined,
+      valueFdIntent: valueFdIntent || undefined,
+      valueFdMalformed:
+        parsedFlags.error.flag === "--value-fd" || undefined,
     };
   }
 
@@ -100,6 +119,7 @@ function buildIdentityOpCandidate(
     parsedFlags.booleanFlags.has("--read") &&
     parsedFlags.booleanFlags.has("--write")
   ) {
+    const valueFd = parsedFlags.valueFlags.get("--value-fd");
     return {
       accessOverride: undefined,
       allowEnvToken: parsedFlags.booleanFlags.has("--allow-env-token"),
@@ -107,8 +127,11 @@ function buildIdentityOpCandidate(
       passToken: parsedFlags.booleanFlags.has("--pass-token"),
       commandArgs: [identity, "op", ...opArgs],
       explicitProfile: parsedFlags.valueFlags.get("--profile"),
-      parseError: "Cannot pass both --read and --write.",
-      valueFd: parsedFlags.valueFlags.get("--value-fd"),
+      // The relay owns this refusal: forbidden flag combinations on a
+      // relay line render as `relay: grammar`.
+      parseError: valueFd === undefined ? "Cannot pass both --read and --write." : undefined,
+      valueFd,
+      valueFdIntent: valueFd !== undefined || undefined,
     };
   }
 
@@ -124,6 +147,7 @@ function buildIdentityOpCandidate(
     commandArgs: [identity, "op", ...opArgs],
     explicitProfile: parsedFlags.valueFlags.get("--profile"),
     valueFd: parsedFlags.valueFlags.get("--value-fd"),
+    valueFdIntent: parsedFlags.valueFlags.has("--value-fd") || undefined,
   };
 }
 
@@ -294,6 +318,8 @@ export function parseCliOptions(argv: readonly string[]): CliOptions {
       parsedRootFlags.booleanFlags.has("--help") ||
       parsedRootFlags.booleanFlags.has("-h"),
     valueFd: parsedIdentityOpCommand?.valueFd,
+    valueFdIntent: parsedIdentityOpCommand?.valueFdIntent,
+    valueFdMalformed: parsedIdentityOpCommand?.valueFdMalformed,
     ...(parsedIdentityOpCommand?.parseError === undefined
       ? {}
       : { parseError: parsedIdentityOpCommand.parseError }),
