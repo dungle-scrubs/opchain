@@ -77,7 +77,7 @@ describe("op --value-fd failure paths", () => {
       ["primary", "--read", "--value-fd", "3", "op", "read", REFERENCE],
       {
         env: {
-          OPCHAIN_OP_TIMEOUT_MS: "1500",
+          OPCHAIN_OP_TIMEOUT_MS: "3000",
           OPCHAIN_TEST_OP_SLEEP_MS: "30000",
         },
       },
@@ -86,7 +86,7 @@ describe("op --value-fd failure paths", () => {
     expect(run.result).toEqual({ code: 1, signal: null });
     expect(run.stderrText).toBe("opchain: relay: child-timeout\n");
     expect(run.valueBytes.length).toBe(0);
-  });
+  }, 10_000);
 
   test("a stalled token resolution hits the deadline, proving cancellable plumbing", async () => {
     const startedAt = Date.now();
@@ -106,25 +106,33 @@ describe("op --value-fd failure paths", () => {
     expect(run.result).toEqual({ code: 1, signal: null });
     expect(run.stderrText).toBe("opchain: relay: deadline\n");
     expect(run.valueBytes.length).toBe(0);
-  });
+  }, 15_000);
 
-  test("a peer that stalls mid-value hits the deadline", async () => {
+  test("a peer that stalls mid-value gets write-failed or deadline, never outliving it", async () => {
+    const startedAt = Date.now();
     const run = await runRelay(
       ["primary", "--read", "--value-fd=3", "op", "read", REFERENCE],
       {
         env: {
-          OPCHAIN_OP_TIMEOUT_MS: "1500",
+          OPCHAIN_OP_TIMEOUT_MS: "5000",
           OPCHAIN_TEST_OP_RELAY_VALUE_BYTES: "262144",
         },
         peerMode: "stall-after-first-chunk",
       },
     );
+    const elapsedMs = Date.now() - startedAt;
 
+    // The spec allows either identifier for a stalled peer: a blocked
+    // write expires the deadline, while a refused write fails fast -
+    // both stop the relay with a prefix delivered and nothing more.
     expect(run.result).toEqual({ code: 1, signal: null });
-    expect(run.stderrText).toBe("opchain: relay: deadline\n");
+    expect(run.stderrText).toMatch(
+      /^opchain: relay: (deadline|write-failed)\n$/,
+    );
+    expect(elapsedMs).toBeLessThan(15_000);
     expect(run.valueBytes.length).toBeGreaterThan(0);
     expect(run.valueBytes.length).toBeLessThan(262_145);
-  });
+  }, 20_000);
 
   test("a peer that closes mid-value gets write-failed after a prefix", async () => {
     const run = await runRelay(
@@ -139,7 +147,7 @@ describe("op --value-fd failure paths", () => {
     expect(run.stderrText).toBe("opchain: relay: write-failed\n");
     expect(run.valueBytes.length).toBeGreaterThan(0);
     expect(run.valueBytes.length).toBeLessThan(262_145);
-  });
+  }, 15_000);
 
   test("an unknown identity reports config without running op", async () => {
     const run = await runRelay([

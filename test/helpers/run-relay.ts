@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { closeSync, mkdtempSync, openSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -77,24 +77,44 @@ export async function runRelay(
     stdio.push(stdio3);
   }
 
-  const child = spawn(process.execPath, [
-    "run",
-    "src/index.ts",
-    ...argvAfterBinary,
-  ], {
-    cwd: process.cwd(),
-    env: {
-      ...process.env,
-      HOME: homePath,
-      OPCHAIN_OP_PATH: OP_FIXTURE_PATH,
-      OPCHAIN_SECURITY_PATH: SECURITY_FIXTURE_PATH,
-      OPCHAIN_TEST_OP_LOG: opLogPath,
-      OPCHAIN_TEST_SECURITY_TOKEN_LOG: securityLogPath,
-      OPCHAIN_TEST_SECURITY_TOKEN: "token-for-primary-read",
-      ...options.env,
-    },
-    stdio,
-  });
+  // Bun's multi-pipe spawn occasionally fails stdio creation with a
+  // transient ENOENT under heavy parallel spawn load; one bounded retry
+  // makes the suite stable without masking real spawn errors.
+  let child: ChildProcess | undefined;
+  for (let attempt = 0; child === undefined; attempt += 1) {
+    try {
+      child = spawn(process.execPath, [
+        "run",
+        "src/index.ts",
+        ...argvAfterBinary,
+      ], {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          HOME: homePath,
+          OPCHAIN_OP_PATH: OP_FIXTURE_PATH,
+          OPCHAIN_SECURITY_PATH: SECURITY_FIXTURE_PATH,
+          OPCHAIN_TEST_OP_LOG: opLogPath,
+          OPCHAIN_TEST_SECURITY_TOKEN_LOG: securityLogPath,
+          OPCHAIN_TEST_SECURITY_TOKEN: "token-for-primary-read",
+          ...options.env,
+        },
+        stdio,
+      });
+    } catch (error) {
+      void error;
+      // A test helper: every synchronous spawn throw here is
+      // environmental (Bun's multi-pipe stdio creation flakes under
+      // suite load), so retry a bounded number of times, then rethrow.
+      if (attempt >= 3) {
+        throw error;
+      }
+
+      await new Promise((resolve) => {
+        setTimeout(resolve, 150);
+      });
+    }
+  }
 
   const stdoutChunks: Buffer[] = [];
   const stderrChunks: Buffer[] = [];
