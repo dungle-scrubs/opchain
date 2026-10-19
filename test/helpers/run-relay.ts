@@ -203,8 +203,16 @@ export async function runRelay(
 
   // A paused peer may still owe the parent buffered bytes: resume the
   // stream and let it end before the caller measures what arrived, so
-  // received-byte assertions are deterministic.
-  if (valueStream !== null && valueStream !== undefined && !peerDestroyedStream) {
+  // received-byte assertions are deterministic. Only the paused case
+  // needs the wait; Bun's stdio sockets do not reliably emit end for
+  // untouched streams, and waiting there costs seconds per spawn.
+  if (
+    valueStream !== null &&
+    valueStream !== undefined &&
+    !peerDestroyedStream &&
+    firstChunkSeen &&
+    peerMode === "stall-after-first-chunk"
+  ) {
     valueStream.resume();
     await new Promise<void>((resolve) => {
       let settled = false;
