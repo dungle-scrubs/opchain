@@ -1,6 +1,6 @@
 {
   "name": "@dungle-scrubs/opchain",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "Run programs with 1Password secrets, without fingerprint prompts.",
   "license": "MIT",
   "type": "module",
