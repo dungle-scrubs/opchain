@@ -57,11 +57,24 @@ The release signs both binaries with a Developer ID Application identity, the
 hardened runtime, and a secure timestamp, then notarizes them with an App Store
 Connect API key.
 
+The release runs on the self-hosted runner on mini, and signs from a dedicated
+keychain there, `~/Library/Keychains/opchain-signing.keychain-db`. It holds the
+Developer ID Application identity as a non-extractable private key with
+`codesign` access, plus Apple's Developer ID G2 intermediate. The keychain is
+in the runner user's keychain search list, locks after an hour and on sleep,
+and the job unlocks it only around the signing step. Its password is in
+1Password (Infra, `opchain signing keychain (mini)`), and the identity's `.p12`
+password is in Infra, `opchain Developer ID p12`.
+
+To rebuild the keychain on a new runner Mac, create it, import the
+intermediate and then the `.p12` with `security import ... -x -T
+/usr/bin/codesign`, run `security set-key-partition-list -S
+apple-tool:,apple:,codesign: -s`, and append it to `security list-keychains -d
+user -s`.
+
 Configure these repository secrets:
 
-- `MACOS_SIGNING_CERT_P12_BASE64`: the Developer ID Application certificate and
-  its private key exported from Keychain Access as `.p12`, base64-encoded
-- `MACOS_SIGNING_CERT_PASSWORD`: the password for that `.p12`
+- `MACOS_SIGNING_KEYCHAIN_PASSWORD`: the password of mini's signing keychain
 - `APPLE_API_KEY_P8_BASE64`: the API key's `.p8`, base64-encoded
 - `APPLE_API_KEY_ID`: the API key ID
 - `APPLE_API_ISSUER_ID`: the API issuer ID

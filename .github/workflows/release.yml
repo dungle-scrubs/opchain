@@ -16,9 +16,11 @@ concurrency:
 
 jobs:
   release:
-    # Runs on the self-hosted runner on mini: signing uses mini's login
-    # keychain (no cert import needed), notarization still reads the Apple
-    # API secrets, and self-hosted minutes are free (ticket #38).
+    # Runs on the self-hosted runner on mini. Signing uses mini's dedicated
+    # opchain-signing keychain, which holds the Developer ID identity as a
+    # non-extractable key; the job unlocks it only around signing.
+    # Notarization still reads the Apple API secrets, and self-hosted minutes
+    # are free (ticket #38).
     runs-on: [self-hosted, macos]
 
     steps:
@@ -49,6 +51,19 @@ jobs:
           bun build src/oprun.ts --compile \
             --target=bun-darwin-arm64 --outfile dist/oprun
 
+      - name: Unlock signing keychain
+        env:
+          MACOS_SIGNING_KEYCHAIN_PASSWORD: ${{ secrets.MACOS_SIGNING_KEYCHAIN_PASSWORD }}
+        run: |
+          if [ -z "$MACOS_SIGNING_KEYCHAIN_PASSWORD" ]; then
+            echo "::error::MACOS_SIGNING_KEYCHAIN_PASSWORD is not set"; exit 1
+          fi
+          keychain="$HOME/Library/Keychains/opchain-signing.keychain-db"
+          if [ ! -f "$keychain" ]; then
+            echo "::error::$keychain is missing (see PACKAGING.md)"; exit 1
+          fi
+          security unlock-keychain -p "$MACOS_SIGNING_KEYCHAIN_PASSWORD" "$keychain"
+
       - name: Sign binaries
         env:
           MACOS_SIGNING_IDENTITY: ${{ vars.MACOS_SIGNING_IDENTITY }}
@@ -61,6 +76,10 @@ jobs:
             echo "::error::APPLE_TEAM_ID is not set"; exit 1
           fi
           scripts/sign-macos.sh --identity "$MACOS_SIGNING_IDENTITY" --team-id "$APPLE_TEAM_ID" --timestamp dist/opchain dist/oprun
+
+      - name: Lock signing keychain
+        if: always()
+        run: security lock-keychain "$HOME/Library/Keychains/opchain-signing.keychain-db" || true
 
       - name: Smoke-test signed binaries
         run: |
