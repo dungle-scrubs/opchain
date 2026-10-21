@@ -169,10 +169,13 @@ test("stops after the first failed signing call", () => {
 
 test("retries a timestamp outage, then signs", () => {
   const f = fixture();
-  const r = f.run(["--identity", "Test Identity", "--timestamp", ...f.binaries], {
-    FAKE_TS_FAILS: "2",
-    OPCHAIN_SIGN_RETRY_DELAY: "0",
-  });
+  const r = f.run(
+    ["--identity", "Test Identity", "--timestamp", ...f.binaries],
+    {
+      FAKE_TS_FAILS: "2",
+      OPCHAIN_SIGN_RETRY_DELAY: "0",
+    },
+  );
   expect(r.status).toBe(0);
   expect(r.signs).toHaveLength(4);
   expect(r.stderr).toContain(
@@ -183,10 +186,13 @@ test("retries a timestamp outage, then signs", () => {
 
 test("gives up after five timestamp outages", () => {
   const f = fixture();
-  const r = f.run(["--identity", "Test Identity", "--timestamp", ...f.binaries], {
-    FAKE_TS_FAILS: "9",
-    OPCHAIN_SIGN_RETRY_DELAY: "0",
-  });
+  const r = f.run(
+    ["--identity", "Test Identity", "--timestamp", ...f.binaries],
+    {
+      FAKE_TS_FAILS: "9",
+      OPCHAIN_SIGN_RETRY_DELAY: "0",
+    },
+  );
   expect(r.status).toBe(1);
   expect(r.signs).toHaveLength(5);
   expect(r.stderr).toContain(`error: codesign failed for ${f.binaries[0]}`);
