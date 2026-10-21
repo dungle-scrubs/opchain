@@ -7,12 +7,19 @@ import {
   runTokenCommandAsync,
   TokenCommandError,
 } from "../../src/token/command-backend.ts";
+import type { ProviderLateSuccessReport } from "../fixtures/deadline/provider-late-success-probe.ts";
+import type { TermEscalationReport } from "../fixtures/deadline/term-escalation-probe.ts";
+import { runIsolatedProbe } from "../helpers/run-isolated-probe.ts";
 import { withEnv } from "../helpers/with-env.ts";
 
 const PROVIDER_MARKER_FIXTURE_PATH = join(
   process.cwd(),
   "test/fixtures/bin/provider-deadline-marker",
 );
+const TERM_ESCALATION_PROBE_PATH =
+  "test/fixtures/deadline/term-escalation-probe.ts";
+const PROVIDER_LATE_SUCCESS_PROBE_PATH =
+  "test/fixtures/deadline/provider-late-success-probe.ts";
 
 /** One deadline-fixture run: outcome, marker presence, and timing. */
 type MarkerFixtureRun = {
@@ -190,21 +197,51 @@ describe("runTokenCommandAsync absolute deadline (F1)", () => {
   }, 10_000);
 
   test("a TERM-ignoring provider still escalates to KILL under the deadline", async () => {
-    const { elapsedMs, markerExists, result } = await runMarkerFixture(
-      {
-        deadlineAt: Date.now() + 150,
-        timeoutMs: 30_000,
-      },
-      { OPCHAIN_TEST_HELPER_IGNORE_TERM: "1" },
-    );
+    // The probe holds the deadline timer until the fixture is ready, so
+    // the TERM trap is installed before the deadline fires however slowly
+    // the shell starts; the KILL grace then runs on the real clock.
+    const homePath = mkdtempSync(join(tmpdir(), "opchain-deadline-term-"));
+    const { code, report, stderrText } =
+      await runIsolatedProbe<TermEscalationReport>(TERM_ESCALATION_PROBE_PATH, {
+        boundMs: 15_000,
+        env: {
+          HOME: homePath,
+          OPCHAIN_TEST_HELPER_IGNORE_TERM: "1",
+          OPCHAIN_TEST_HELPER_MARKER_PATH: join(homePath, "started.marker"),
+          OPCHAIN_TEST_HELPER_PID_PATH: join(homePath, "provider.pid"),
+        },
+      });
 
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.reason).toBe("timeout");
-    }
-    // The marker was written before the deadline fired; the run is
-    // ended by SIGKILL after the grace period, never by success.
-    expect(markerExists).toBe(true);
-    expect(elapsedMs).toBeLessThan(6_000);
+    expect({ code, stderrText }).toEqual({ code: 0, stderrText: "" });
+    expect(report).toMatchObject({
+      capturedDelayMs: 150,
+      markerExists: true,
+      providerAlive: false,
+      reason: "timeout",
+    });
+    // TERM was ignored: only the SIGKILL after the 2 s grace ended it.
+    expect(report?.afterDispatchMs).toBeGreaterThanOrEqual(1_950);
+    expect(report?.afterDispatchMs).toBeLessThan(4_000);
+  }, 20_000);
+});
+
+describe("runTokenCommandAsync late success (F1)", () => {
+  test("a provider success after the deadline, before its timer dispatches, is a timeout", async () => {
+    // The provider exits 0 at ~200 ms against a 50 ms budget, while the
+    // preload holds the deadline timer until ~1050 ms: only the
+    // completion-time timestamp check can report the timeout.
+    const { code, report, stderrText } =
+      await runIsolatedProbe<ProviderLateSuccessReport>(
+        PROVIDER_LATE_SUCCESS_PROBE_PATH,
+        {
+          boundMs: 10_000,
+          env: { HOME: mkdtempSync(join(tmpdir(), "opchain-deadline-late-")) },
+          timerSlackMs: 1_000,
+        },
+      );
+
+    expect(stderrText).toBe("");
+    expect(report).toEqual({ ok: false, reason: "timeout" });
+    expect(code).toBe(0);
   }, 15_000);
 });

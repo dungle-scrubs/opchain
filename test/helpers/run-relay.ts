@@ -1,11 +1,13 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import {
   closeSync,
+  existsSync,
   constants as fsConstants,
   mkdtempSync,
   openSync,
   readFileSync,
   readSync,
+  rmSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -432,15 +434,213 @@ async function readFirstFifoChunk(readFd: number): Promise<Buffer> {
   return Buffer.alloc(0);
 }
 
+/** The Node-native synchronous parent that captures piped relay runs. */
+const SUPERVISOR_PATH = join(
+  process.cwd(),
+  "test/fixtures/relay-supervisor.mjs",
+);
+
 /**
- * Runs one opchain relay invocation with descriptor 3 wired per `stdio3`
- * and every stream drained concurrently.
+ * Backstop on the supervisor itself, above its own 15 s bound on the
+ * CLI plus Node startup; a run past it is a fixture failure.
+ */
+const SUPERVISOR_TIMEOUT_MS = 20_000;
+
+/** Descriptor 3 as the supervisor wires it: a pipe, no slot, or a file. */
+type SupervisedFd3 = "pipe" | "none" | { readonly path: string };
+
+/** One supervised run's status and raw bytes. */
+type SupervisedRun = {
+  readonly code: number | null;
+  readonly signal: string | null;
+  readonly stderr: Buffer;
+  readonly stdout: Buffer;
+  readonly value: Buffer;
+};
+
+/**
+ * Runs one command under `test/fixtures/relay-supervisor.mjs`: Node's
+ * spawnSync gives the command real pipes for stdout, stderr and a piped
+ * descriptor 3, and the supervisor writes their bytes to a result file.
+ * Bun waits for the supervisor synchronously with its stdio ignored, so
+ * no Bun stream event is involved. Bun's async stream capture once
+ * recorded a missing-executable refusal as exit 1 with empty stderr,
+ * while the same CLI under this supervisor wrote its line in every
+ * reference run. The environment reaches the command by inheritance;
+ * only the command line, descriptor 3 layout and result path ride the
+ * request.
+ *
+ * @param command - Executable path to run.
+ * @param args - Argument vector for `command`.
+ * @param fd3 - How descriptor 3 is wired.
+ * @param env - The command's complete environment.
+ * @returns {SupervisedRun} Its exit code, signal and captured bytes.
+ */
+function runSupervised(
+  command: string,
+  args: readonly string[],
+  fd3: SupervisedFd3,
+  env: NodeJS.ProcessEnv,
+): SupervisedRun {
+  const nodePath = Bun.which("node");
+  if (nodePath === null) {
+    throw new Error("relay supervisor needs node on PATH");
+  }
+
+  const dir = mkdtempSync(join(tmpdir(), "opchain-relay-supervisor-"));
+  const resultPath = join(dir, "result.json");
+  try {
+    const supervisor = spawnSync(
+      nodePath,
+      [SUPERVISOR_PATH, JSON.stringify({ args, command, fd3, resultPath })],
+      {
+        cwd: process.cwd(),
+        env,
+        killSignal: "SIGKILL",
+        stdio: "ignore",
+        timeout: SUPERVISOR_TIMEOUT_MS,
+      },
+    );
+    if (supervisor.error !== undefined) {
+      throw supervisor.error;
+    }
+
+    if (!existsSync(resultPath)) {
+      throw new Error(
+        `relay supervisor exited with status ${supervisor.status}, signal ${supervisor.signal}, without a result`,
+      );
+    }
+    const result = JSON.parse(readFileSync(resultPath, "utf8")) as
+      | { readonly error: string }
+      | {
+          readonly code: number | null;
+          readonly signal: string | null;
+          readonly stderr: string;
+          readonly stdout: string;
+          readonly value: string;
+        };
+    if ("error" in result) {
+      throw new Error(`relay supervisor failed: ${result.error}`);
+    }
+    if (supervisor.status !== 0) {
+      throw new Error(
+        `relay supervisor exited with status ${supervisor.status}, signal ${supervisor.signal}`,
+      );
+    }
+
+    return {
+      code: result.code,
+      signal: result.signal,
+      stderr: Buffer.from(result.stderr, "base64"),
+      stdout: Buffer.from(result.stdout, "base64"),
+      value: Buffer.from(result.value, "base64"),
+    };
+  } finally {
+    rmSync(dir, { force: true, recursive: true });
+  }
+}
+
+/**
+ * Runs the CLI with descriptor 3 on a helper-owned FIFO or a caller's
+ * raw descriptor. The value write can stay blocked on such a descriptor
+ * when the CLI exits, the case in which Bun was observed to drop the
+ * stderr pipe's data and end, so stdout and stderr are captured in files
+ * and the run settles on the reap (see `openFileCapture`). The FIFO peer
+ * must be serviced while the CLI runs, so this path stays asynchronous.
+ *
+ * @param argvAfterBinary - Arguments between `bun run src/index.ts` and the end.
+ * @param stdio3 - The FIFO or raw descriptor 3 wiring.
+ * @param env - The CLI's complete environment.
+ * @returns {Promise<SupervisedRun>} Its exit code, signal and captured bytes.
+ */
+async function runFileCaptured(
+  argvAfterBinary: readonly string[],
+  stdio3: Extract<RelayStdio3, { kind: "fifo" | "raw-fd" }>,
+  env: NodeJS.ProcessEnv,
+): Promise<SupervisedRun> {
+  const captures = {
+    stderr: openFileCapture("stderr"),
+    stdout: openFileCapture("stdout"),
+  };
+  let fifo: FifoEnds | undefined;
+  const value: Buffer[] = [];
+  let fifoReadEndClosed = false;
+  try {
+    let fd3: number;
+    if (stdio3.kind === "fifo") {
+      fifo = openFifoEnds();
+      fd3 = fifo.writeFd;
+    } else {
+      fd3 = stdio3.fd;
+    }
+    const { exited } = await spawnBunCli(argvAfterBinary, {
+      env,
+      stdio: ["ignore", captures.stdout.fd, captures.stderr.fd, fd3],
+    });
+
+    // The FIFO peer: read the first chunk the relay delivers, then hold
+    // the read end open (the raced write waits out the deadline) or close
+    // it (the blocked write fails with EPIPE). An unexpected peer error is
+    // stashed and rethrown after the child settles, so it fails the test
+    // as a fixture error instead of an unhandled rejection.
+    const peer =
+      fifo !== undefined && stdio3.kind === "fifo"
+        ? { mode: stdio3.peer, readFd: fifo.readFd }
+        : undefined;
+    let fifoPeerError: unknown;
+    const fifoPeerTask =
+      peer === undefined
+        ? undefined
+        : (async () => {
+            try {
+              value.push(await readFirstFifoChunk(peer.readFd));
+              if (peer.mode === "destroy-after-first-chunk") {
+                closeSync(peer.readFd);
+                fifoReadEndClosed = true;
+              }
+            } catch (error) {
+              fifoPeerError = error;
+            }
+          })();
+
+    const { code, signal } = await exited;
+    await fifoPeerTask;
+    if (fifoPeerError !== undefined) {
+      throw fifoPeerError;
+    }
+
+    return {
+      code,
+      signal,
+      stderr: captures.stderr.read(),
+      stdout: captures.stdout.read(),
+      value: Buffer.concat(value),
+    };
+  } finally {
+    if (fifo !== undefined) {
+      if (!fifoReadEndClosed) {
+        closeSync(fifo.readFd);
+      }
+      closeSync(fifo.writeFd);
+    }
+    captures.stderr.close();
+    captures.stdout.close();
+  }
+}
+
+/**
+ * Runs one opchain relay invocation with descriptor 3 wired per `stdio3`.
+ *
+ * Pipe, closed, alias and file-path layouts run under the Node-native
+ * supervisor (see `runSupervised`); FIFO and raw-descriptor layouts use
+ * file capture (see `runFileCaptured`).
  *
  * `duplicate-of` runs the CLI under `/bin/sh -c 'exec 3>&N "$0" "$@"'`
- * so fd 3 is a genuine child-side dup2 of the freshly redirected stdout
- * or stderr pipe: a numeric stdio slot passes the PARENT's descriptor
+ * so fd 3 is a genuine child-side dup2 of the freshly created stdout or
+ * stderr pipe: a numeric stdio slot passes the PARENT's descriptor
  * (Node's documented semantics, and Bun's behavior since 1.4.3 on
- * Linux), so it can never create the child-side alias under test.
+ * Linux), so it can never create the child-side alias under test. Argv
+ * rides "$0"/"$@", so nothing is interpolated.
  *
  * @param argvAfterBinary - Arguments between `bun run src/index.ts` and the end.
  * @param options - Descriptor 3 wiring and extra env.
@@ -457,47 +657,6 @@ export async function runRelay(
   writeAutoReadWriteConfig(homePath);
   const opLogPath = join(homePath, "op.log");
   const securityLogPath = join(homePath, "security.log");
-
-  let fileFd: number | undefined;
-  let fifo: FifoEnds | undefined;
-  let fifoPeerMode: FifoPeerMode | undefined;
-  // A FIFO descriptor 3 can leave the relay's value write blocked when
-  // the CLI exits, the case in which Bun was observed to drop the stderr
-  // pipe's data and end; those runs capture stdout and stderr in files
-  // and settle on the reap (see `openFileCapture`).
-  const fileCaptured =
-    options.stdio3?.kind === "fifo" || options.stdio3?.kind === "raw-fd";
-  const captures = fileCaptured
-    ? { stderr: openFileCapture("stderr"), stdout: openFileCapture("stdout") }
-    : undefined;
-  const stdio: ("pipe" | "ignore" | number)[] =
-    captures === undefined
-      ? ["pipe", "pipe", "pipe"]
-      : ["ignore", captures.stdout.fd, captures.stderr.fd];
-  switch (options.stdio3?.kind) {
-    case undefined:
-    case "pipe":
-      stdio.push("pipe");
-      break;
-    case "closed":
-      break;
-    case "duplicate-of":
-      // No stdio slot 3: the child-side shell dup below wires fd 3.
-      break;
-    case "file-path":
-      fileFd = openSync(options.stdio3.path, "w");
-      stdio.push(fileFd);
-      break;
-    case "raw-fd":
-      stdio.push(options.stdio3.fd);
-      break;
-    case "fifo":
-      fifo = openFifoEnds();
-      fifoPeerMode = options.stdio3.peer;
-      stdio.push(fifo.writeFd);
-      break;
-  }
-
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     HOME: homePath,
@@ -509,85 +668,45 @@ export async function runRelay(
     ...options.env,
   };
 
-  // The alias fixture dups fd 1 or 2 onto fd 3 inside the child before
-  // exec'ing the CLI; argv rides "$0"/"$@" so nothing is interpolated.
-  const { completion, exited, output, outputEnded } =
-    options.stdio3?.kind === "duplicate-of"
-      ? await spawnGuarded(
-          "/bin/sh",
-          [
-            "-c",
-            `exec 3>&${options.stdio3.fd} "$0" "$@"`,
-            process.execPath,
-            "run",
-            "src/index.ts",
-            ...argvAfterBinary,
-          ],
-          { env, stdio },
-        )
-      : await spawnBunCli(argvAfterBinary, { env, stdio });
-
-  // Descriptor 3 is always drained when it is a pipe: a fixture peer that
-  // stops reading belongs to the FIFO kinds, whose deterministic
-  // backpressure the kernel enforces.
-
-  // The FIFO peer: read the first chunk the relay delivers, then hold
-  // the read end open (the raced write waits out the deadline) or close
-  // it (the blocked write fails with EPIPE). An unexpected peer error is
-  // stashed and rethrown after the child settles, so it fails the test
-  // as a fixture error instead of an unhandled rejection.
-  let fifoReadEndClosed = false;
-  let fifoPeerError: unknown;
-  const fifoPeerTask =
-    fifo === undefined || fifoPeerMode === undefined
-      ? undefined
-      : (async () => {
-          try {
-            const firstChunk = await readFirstFifoChunk(fifo.readFd);
-            output.value.push(firstChunk);
-            if (fifoPeerMode === "destroy-after-first-chunk") {
-              closeSync(fifo.readFd);
-              fifoReadEndClosed = true;
-            }
-          } catch (error) {
-            fifoPeerError = error;
-          }
-        })();
-
-  // The child's close can precede delivery of its last stdout or stderr
-  // bytes, so each stream's own end is awaited too. File-captured runs
-  // have no output pipe: the reap alone makes the files final.
-  const { code, signal } =
-    captures === undefined ? await completion : await exited;
-  await outputEnded;
-
-  if (fifoPeerTask !== undefined) {
-    await fifoPeerTask;
+  const cliArgs = ["run", "src/index.ts", ...argvAfterBinary];
+  const stdio3 = options.stdio3 ?? { kind: "pipe" };
+  let run: SupervisedRun;
+  switch (stdio3.kind) {
+    case "pipe":
+      run = runSupervised(process.execPath, cliArgs, "pipe", env);
+      break;
+    case "closed":
+      run = runSupervised(process.execPath, cliArgs, "none", env);
+      break;
+    case "duplicate-of":
+      run = runSupervised(
+        "/bin/sh",
+        ["-c", `exec 3>&${stdio3.fd} "$0" "$@"`, process.execPath, ...cliArgs],
+        "none",
+        env,
+      );
+      break;
+    case "file-path":
+      run = runSupervised(
+        process.execPath,
+        cliArgs,
+        { path: stdio3.path },
+        env,
+      );
+      break;
+    case "fifo":
+    case "raw-fd":
+      run = await runFileCaptured(argvAfterBinary, stdio3, env);
+      break;
   }
-  if (fifoPeerError !== undefined) {
-    throw fifoPeerError;
-  }
-  if (fifo !== undefined) {
-    if (!fifoReadEndClosed) {
-      closeSync(fifo.readFd);
-    }
-    closeSync(fifo.writeFd);
-  }
-  if (fileFd !== undefined) {
-    closeSync(fileFd);
-  }
-  const stderrBytes = captures?.stderr.read() ?? Buffer.concat(output.stderr);
-  const stdoutBytes = captures?.stdout.read() ?? Buffer.concat(output.stdout);
-  captures?.stderr.close();
-  captures?.stdout.close();
 
   return {
     homePath,
     opLogPath,
-    result: { code, signal },
+    result: { code: run.code, signal: run.signal },
     securityLogPath,
-    stderrText: stderrBytes.toString("utf8"),
-    stdoutText: stdoutBytes.toString("utf8"),
-    valueBytes: Buffer.concat(output.value),
+    stderrText: run.stderr.toString("utf8"),
+    stdoutText: run.stdout.toString("utf8"),
+    valueBytes: run.value,
   };
 }

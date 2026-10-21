@@ -17,6 +17,12 @@ const SYNTHETIC_VALUE = "synthetic-relay-value-61";
 const REFERENCE = "op://Infra/reflect-intake-restic/password";
 const DENIED_STDERR =
   "vault \"Infra\" isn't in this account or you don't have access to it";
+// The complete value the fixture emits for RELAY_VALUE_BYTES=262144:
+// 256 KiB of x plus a trailing newline. A delivered prefix must match it.
+const LARGE_VALUE = Buffer.concat([
+  Buffer.alloc(262_144, 0x78),
+  Buffer.from("\n"),
+]);
 
 type TelemetryEvent = {
   readonly attributes: Record<string, unknown>;
@@ -199,6 +205,9 @@ describe("op --value-fd failure paths", () => {
     expect(run.stdoutText).toBe("");
     expect(run.valueBytes.length).toBeGreaterThan(0);
     expect(run.valueBytes.length).toBeLessThan(262_145);
+    expect(
+      run.valueBytes.equals(LARGE_VALUE.subarray(0, run.valueBytes.length)),
+    ).toBe(true);
   }, 25_000);
 
   test("an explicitly blocking inherited pipe with a silent peer ends at the deadline", async () => {
@@ -272,6 +281,9 @@ describe("op --value-fd failure paths", () => {
     expect(run.stdoutText).toBe("");
     expect(run.valueBytes.length).toBeGreaterThan(0);
     expect(run.valueBytes.length).toBeLessThan(262_145);
+    expect(
+      run.valueBytes.equals(LARGE_VALUE.subarray(0, run.valueBytes.length)),
+    ).toBe(true);
   }, 15_000);
 
   test("a stalled config load hits the overall deadline", async () => {
