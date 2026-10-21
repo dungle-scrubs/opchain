@@ -32,7 +32,16 @@ exit "\${FAKE_SECURITY_EXIT:-0}"`,
     codesign: `printf 'codesign %s\\n' "$*" >> "$FAKE_LOG"
 for arg in "$@"; do
   case "$arg" in
-    --sign) exit "\${FAKE_SIGN_EXIT:-0}" ;;
+    --sign)
+      if [[ -n "\${FAKE_TS_FAILS:-}" ]]; then
+        count=$(cat "$FAKE_LOG.ts" 2>/dev/null || echo 0)
+        if (( count < FAKE_TS_FAILS )); then
+          echo $((count + 1)) > "$FAKE_LOG.ts"
+          printf '%s: The timestamp service is not available.\\n' "\${!#}" >&2
+          exit 1
+        fi
+      fi
+      exit "\${FAKE_SIGN_EXIT:-0}" ;;
     --verify) exit "\${FAKE_VERIFY_EXIT:-0}" ;;
   esac
 done
@@ -156,6 +165,41 @@ test("stops after the first failed signing call", () => {
   expect(r.stderr).toContain(`error: codesign failed for ${f.binaries[0]}`);
   expect(r.signs).toHaveLength(1);
   expect(r.lines).toHaveLength(2);
+});
+
+test("retries a timestamp outage, then signs", () => {
+  const f = fixture();
+  const r = f.run(["--identity", "Test Identity", "--timestamp", ...f.binaries], {
+    FAKE_TS_FAILS: "2",
+    OPCHAIN_SIGN_RETRY_DELAY: "0",
+  });
+  expect(r.status).toBe(0);
+  expect(r.signs).toHaveLength(4);
+  expect(r.stderr).toContain(
+    `retrying ${f.binaries[0]}: timestamp service unavailable (attempt 2 of 5)`,
+  );
+  expect(r.stdout).toContain(`signed ${f.binaries[1]} as dev.opchain.oprun`);
+});
+
+test("gives up after five timestamp outages", () => {
+  const f = fixture();
+  const r = f.run(["--identity", "Test Identity", "--timestamp", ...f.binaries], {
+    FAKE_TS_FAILS: "9",
+    OPCHAIN_SIGN_RETRY_DELAY: "0",
+  });
+  expect(r.status).toBe(1);
+  expect(r.signs).toHaveLength(5);
+  expect(r.stderr).toContain(`error: codesign failed for ${f.binaries[0]}`);
+});
+
+test("does not retry a timestamp message without --timestamp", () => {
+  const f = fixture();
+  const r = f.run(["--identity", "Test Identity", ...f.binaries], {
+    FAKE_TS_FAILS: "1",
+    OPCHAIN_SIGN_RETRY_DELAY: "0",
+  });
+  expect(r.status).toBe(1);
+  expect(r.signs).toHaveLength(1);
 });
 
 test("rejects the wrong team with the observed team in its error", () => {
