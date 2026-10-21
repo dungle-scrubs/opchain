@@ -10,12 +10,13 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { withDelayedConfig } from "../helpers/delayed-config.ts";
 import { runRelay } from "../helpers/run-relay.ts";
 
 const SYNTHETIC_VALUE = "synthetic-relay-value-61";
 const REFERENCE = "op://Infra/reflect-intake-restic/password";
 const DENIED_STDERR =
-  'vault "Infra" isn\'t in this account or you don\'t have access to it';
+  "vault \"Infra\" isn't in this account or you don't have access to it";
 
 type TelemetryEvent = {
   readonly attributes: Record<string, unknown>;
@@ -61,7 +62,10 @@ describe("op --value-fd failure paths", () => {
         "child-failed:notfound",
       ],
       ["POST: dial tcp: i/o timeout", "child-failed:unreachable"],
-      ["dial tcp: lookup example.com: no such host", "child-failed:unreachable"],
+      [
+        "dial tcp: lookup example.com: no such host",
+        "child-failed:unreachable",
+      ],
       ["something unexpected", "child-failed:unknown"],
     ];
 
@@ -122,11 +126,22 @@ describe("op --value-fd failure paths", () => {
   }, 25_000);
 
   test("an expired budget refuses before starting either subprocess", async () => {
-    const run = await runRelay(
-      ["primary", "--read", "--value-fd", "3", "op", "read", REFERENCE],
-      { env: { OPCHAIN_OP_TIMEOUT_MS: "1" } },
+    // Config arrives CONFIG_DELAY_MS after the read opens, so the 50 ms
+    // budget is spent in config loading, before either subprocess.
+    const { readerAttached, value: run } = await withDelayedConfig(
+      (configPath) =>
+        runRelay(
+          ["primary", "--read", "--value-fd", "3", "op", "read", REFERENCE],
+          {
+            env: {
+              OPCHAIN_CONFIG_PATH: configPath,
+              OPCHAIN_OP_TIMEOUT_MS: "50",
+            },
+          },
+        ),
     );
 
+    expect(readerAttached).toBe(true);
     expect(run.result).toEqual({ code: 1, signal: null });
     expect(run.stderrText).toBe("opchain: relay: deadline\n");
     // The provider never started: a zero budget refuses, it never
@@ -155,32 +170,33 @@ describe("op --value-fd failure paths", () => {
     expect(run.valueBytes.length).toBe(0);
   }, 15_000);
 
-  test("a stalled peer polls until the deadline and never sees a spurious failure", async () => {
+  test("a stalled peer holds the raced write at the deadline with only a prefix", async () => {
     const startedAt = Date.now();
     const run = await runRelay(
       ["primary", "--read", "--value-fd=3", "op", "read", REFERENCE],
       {
         env: {
-          OPCHAIN_OP_TIMEOUT_MS: "5000",
+          OPCHAIN_OP_TIMEOUT_MS: "3000",
           OPCHAIN_TEST_OP_RELAY_VALUE_BYTES: "262144",
         },
-        peerMode: "stall-after-first-chunk",
+        stdio3: { kind: "fifo", peer: "stall-after-first-chunk" },
       },
     );
     const elapsedMs = Date.now() - startedAt;
 
-    // A stalled (not closed) peer never fails fast: the raced write
-    // waits out the deadline on a blocking descriptor (the FIFO fixture
-    // below proves the strict deadline outcome there), and a Bun socket
-    // transport may additionally report a genuine write error, which
-    // the spec permits for a stalled peer. Either way a prefix was
-    // delivered and nothing outlives the deadline.
+    // The peer reads one chunk and then holds the FIFO's read end open
+    // without reading further, so the kernel blocks the relay's raced
+    // write. A stalled (not closed) peer can never fail fast: the run
+    // settles strictly at the deadline, with a prefix delivered to the
+    // peer and nothing on stdout. A Bun socket pipe cannot host this
+    // contract - its buffer swallows the whole value on Linux (and grows
+    // without bound on macOS) - so the fixture uses a FIFO, whose
+    // capacity (16-64 KiB) is far below the payload.
     expect(run.result).toEqual({ code: 1, signal: null });
-    expect(run.stderrText).toMatch(
-      /^opchain: relay: (deadline|write-failed)\n$/,
-    );
-    expect(elapsedMs).toBeGreaterThanOrEqual(4_500);
-    expect(elapsedMs).toBeLessThan(15_000);
+    expect(run.stderrText).toBe("opchain: relay: deadline\n");
+    expect(elapsedMs).toBeGreaterThanOrEqual(2_800);
+    expect(elapsedMs).toBeLessThan(8_000);
+    expect(run.stdoutText).toBe("");
     expect(run.valueBytes.length).toBeGreaterThan(0);
     expect(run.valueBytes.length).toBeLessThan(262_145);
   }, 25_000);
@@ -193,7 +209,10 @@ describe("op --value-fd failure paths", () => {
     // The read end is held open and never read; the write end is passed
     // as the inherited descriptor - a genuinely blocking FIFO, not a
     // Bun-created pipe socket.
-    const readFd = openSync(fifoPath, fsConstants.O_RDONLY | fsConstants.O_NONBLOCK);
+    const readFd = openSync(
+      fifoPath,
+      fsConstants.O_RDONLY | fsConstants.O_NONBLOCK,
+    );
     const writeFd = openSync(fifoPath, fsConstants.O_WRONLY);
     const startedAt = Date.now();
 
@@ -214,7 +233,7 @@ describe("op --value-fd failure paths", () => {
     expect(run.result).toEqual({ code: 1, signal: null });
     expect(run.stderrText).toBe("opchain: relay: deadline\n");
     expect(elapsedMs).toBeGreaterThanOrEqual(2_800);
-    expect(elapsedMs).toBeLessThan(15_000);
+    expect(elapsedMs).toBeLessThan(8_000);
   }, 25_000);
 
   test("a child that writes the value before a nonzero exit delivers nothing", async () => {
@@ -239,12 +258,18 @@ describe("op --value-fd failure paths", () => {
       ["primary", "--read", "--value-fd=3", "op", "read", REFERENCE],
       {
         env: { OPCHAIN_TEST_OP_RELAY_VALUE_BYTES: "262144" },
-        peerMode: "destroy-after-first-chunk",
+        stdio3: { kind: "fifo", peer: "destroy-after-first-chunk" },
       },
     );
 
+    // The peer reads one chunk from the FIFO, then closes its read end:
+    // the relay's blocked write fails with EPIPE at once - a strict
+    // write-failed, with exactly the prefix the peer received. The
+    // fixture is a FIFO because a socket pipe's large buffer lets the
+    // whole value drain before the close lands.
     expect(run.result).toEqual({ code: 1, signal: null });
     expect(run.stderrText).toBe("opchain: relay: write-failed\n");
+    expect(run.stdoutText).toBe("");
     expect(run.valueBytes.length).toBeGreaterThan(0);
     expect(run.valueBytes.length).toBeLessThan(262_145);
   }, 15_000);
@@ -373,18 +398,16 @@ describe("op --value-fd failure paths", () => {
   });
 
   test("debug metadata rides a separately prefixed line that never matches the anchor", async () => {
-    const run = await runRelay(
-      [
-        "--debug",
-        "primary",
-        "--read",
-        "--value-fd",
-        "1",
-        "op",
-        "read",
-        REFERENCE,
-      ],
-    );
+    const run = await runRelay([
+      "--debug",
+      "primary",
+      "--read",
+      "--value-fd",
+      "1",
+      "op",
+      "read",
+      REFERENCE,
+    ]);
 
     expect(run.result).toEqual({ code: 1, signal: null });
     expect(run.stderrText).toContain("opchain: relay: descriptor-standard\n");

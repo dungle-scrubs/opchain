@@ -79,7 +79,10 @@ async function readOpReady(
  * @param timeoutMs - Bound on the wait for the exit itself.
  * @returns {Promise<ExitFacts>} Exit status and streamed output.
  */
-function waitForExit(proc: ChildProcess, timeoutMs: number): Promise<ExitFacts> {
+function waitForExit(
+  proc: ChildProcess,
+  timeoutMs: number,
+): Promise<ExitFacts> {
   return new Promise((resolve, reject) => {
     let stderr = "";
     let stdout = "";
@@ -252,10 +255,7 @@ async function expectForwardedToProgram(
 ): Promise<void> {
   const signalsDirectory = mkdtempSync(join(tmpdir(), "opchain-signals-dir-"));
   const programArgs = buildTrappingProgramArgs(signal, receiptName, exitCode);
-  const proc = spawnOpchain(
-    ["run", "--", ...programArgs],
-    signalsDirectory,
-  );
+  const proc = spawnOpchain(["run", "--", ...programArgs], signalsDirectory);
   const opchainPid = requireOpchainPid(proc);
   try {
     const { opPid, programPid } = await readOpReady(signalsDirectory);
@@ -317,87 +317,67 @@ describe("op stop signals", () => {
     },
     15_000,
   );
-  test(
-    "forwards SIGTERM to op run and waits for the wrapped program",
-    async () => {
-      await expectForwardedToProgram("SIGTERM", "term-received", 42);
-    },
-    15_000,
-  );
+  test("forwards SIGTERM to op run and waits for the wrapped program", async () => {
+    await expectForwardedToProgram("SIGTERM", "term-received", 42);
+  }, 15_000);
 
-  test(
-    "forwards SIGINT to op run and waits for the wrapped program",
-    async () => {
-      await expectForwardedToProgram("SIGINT", "int-received", 43);
-    },
-    15_000,
-  );
+  test("forwards SIGINT to op run and waits for the wrapped program", async () => {
+    await expectForwardedToProgram("SIGINT", "int-received", 43);
+  }, 15_000);
 
-  test(
-    "forwards SIGHUP to op run and waits for the wrapped program",
-    async () => {
-      await expectForwardedToProgram("SIGHUP", "hup-received", 44);
-    },
-    15_000,
-  );
+  test("forwards SIGHUP to op run and waits for the wrapped program", async () => {
+    await expectForwardedToProgram("SIGHUP", "hup-received", 44);
+  }, 15_000);
 
-  test(
-    "forwards SIGTERM to a non-run op command and reports its signal status",
-    async () => {
-      const signalsDirectory = mkdtempSync(
-        join(tmpdir(), "opchain-signals-dir-"),
+  test("forwards SIGTERM to a non-run op command and reports its signal status", async () => {
+    const signalsDirectory = mkdtempSync(
+      join(tmpdir(), "opchain-signals-dir-"),
+    );
+    // hold mode: a non-run command that never finishes on its own, so only
+    // the forwarded signal can end it.
+    const proc = spawnOpchain(["item", "list"], signalsDirectory, {
+      OPCHAIN_TEST_OP_SIGNALS_MODE: "hold",
+    });
+    const opchainPid = requireOpchainPid(proc);
+    try {
+      const { opPid, programPid } = await readOpReady(signalsDirectory);
+      expect(programPid).toBeNull();
+
+      process.kill(opchainPid, "SIGTERM");
+
+      const exit = await waitForExit(proc, 10_000);
+      expect(exit.status).toBe(143);
+      expect(await isPidGone(opPid, 2_000)).toBe(true);
+    } finally {
+      killProcessGroup(proc);
+    }
+  }, 15_000);
+
+  test("escalates a signal-ignoring op through the timeout to SIGKILL", async () => {
+    const signalsDirectory = mkdtempSync(
+      join(tmpdir(), "opchain-signals-dir-"),
+    );
+    // ignore mode: `op` traps every stop signal without acting, so the
+    // existing timeout must SIGTERM it, wait out the grace period, and
+    // SIGKILL it.
+    const proc = spawnOpchain(["item", "list"], signalsDirectory, {
+      OPCHAIN_TEST_OP_SIGNALS_MODE: "ignore",
+      OPCHAIN_OP_TIMEOUT_MS: "1000",
+    });
+    try {
+      const exited = waitForExit(proc, 15_000);
+      const { opPid } = await readOpReady(signalsDirectory);
+      process.kill(requireOpchainPid(proc), "SIGINT");
+      await waitForFile(join(signalsDirectory, "op-SIGINT-received"), 5_000);
+
+      const exit = await exited;
+      expect(exit.status).toBe(1);
+      expect(exit.stderr).toContain(
+        "1Password CLI command timed out after 1000ms",
       );
-      // hold mode: a non-run command that never finishes on its own, so only
-      // the forwarded signal can end it.
-      const proc = spawnOpchain(["item", "list"], signalsDirectory, {
-        OPCHAIN_TEST_OP_SIGNALS_MODE: "hold",
-      });
-      const opchainPid = requireOpchainPid(proc);
-      try {
-        const { opPid, programPid } = await readOpReady(signalsDirectory);
-        expect(programPid).toBeNull();
-
-        process.kill(opchainPid, "SIGTERM");
-
-        const exit = await waitForExit(proc, 10_000);
-        expect(exit.status).toBe(143);
-        expect(await isPidGone(opPid, 2_000)).toBe(true);
-      } finally {
-        killProcessGroup(proc);
-      }
-    },
-    15_000,
-  );
-
-  test(
-    "escalates a signal-ignoring op through the timeout to SIGKILL",
-    async () => {
-      const signalsDirectory = mkdtempSync(
-        join(tmpdir(), "opchain-signals-dir-"),
-      );
-      // ignore mode: `op` traps every stop signal without acting, so the
-      // existing timeout must SIGTERM it, wait out the grace period, and
-      // SIGKILL it.
-      const proc = spawnOpchain(["item", "list"], signalsDirectory, {
-        OPCHAIN_TEST_OP_SIGNALS_MODE: "ignore",
-        OPCHAIN_OP_TIMEOUT_MS: "1000",
-      });
-      try {
-        const exited = waitForExit(proc, 15_000);
-        const { opPid } = await readOpReady(signalsDirectory);
-        process.kill(requireOpchainPid(proc), "SIGINT");
-        await waitForFile(join(signalsDirectory, "op-SIGINT-received"), 5_000);
-
-        const exit = await exited;
-        expect(exit.status).toBe(1);
-        expect(exit.stderr).toContain(
-          "1Password CLI command timed out after 1000ms",
-        );
-        expect(await isPidGone(opPid, 2_000)).toBe(true);
-      } finally {
-        killProcessGroup(proc);
-      }
-    },
-    20_000,
-  );
+      expect(await isPidGone(opPid, 2_000)).toBe(true);
+    } finally {
+      killProcessGroup(proc);
+    }
+  }, 20_000);
 });

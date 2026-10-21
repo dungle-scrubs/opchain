@@ -16,6 +16,11 @@ type SecurityTokenRequest = {
    * under this timeout instead of the synchronous spawn.
    */
   readonly commandTimeoutMs?: number;
+  /**
+   * Absolute deadline timestamp used by the async backend for timeout
+   * escalation and accepting successful completion.
+   */
+  readonly deadlineAt?: number;
   readonly securityPath: string;
   readonly serviceName: string;
 };
@@ -56,10 +61,13 @@ export async function getTokenFromSecurity(
     request.accountName,
   ] as const;
   const commandResult =
-    request.commandTimeoutMs === undefined
+    request.commandTimeoutMs === undefined && request.deadlineAt === undefined
       ? runTokenCommand(request.securityPath, commandArgs)
       : await runTokenCommandAsync(request.securityPath, commandArgs, {
-          timeoutMs: request.commandTimeoutMs,
+          deadlineAt: request.deadlineAt,
+          timeoutMs:
+            request.commandTimeoutMs ??
+            (request.deadlineAt ?? Date.now()) - Date.now(),
         });
 
   if (!commandResult.ok && commandResult.error.reason === "start") {

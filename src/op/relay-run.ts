@@ -39,11 +39,7 @@ const OP_SIGKILL_GRACE_MS = 2_000;
 /**
  * Stop signals opchain forwards to the delegated `op` child while it runs.
  */
-const STOP_SIGNALS: readonly NodeJS.Signals[] = [
-  "SIGTERM",
-  "SIGINT",
-  "SIGHUP",
-];
+const STOP_SIGNALS: readonly NodeJS.Signals[] = ["SIGTERM", "SIGINT", "SIGHUP"];
 
 /**
  * Largest write issued per turn of the descriptor write loop. The loop
@@ -86,9 +82,9 @@ type RelayChildResult =
  * @returns {number} Signal number, or 0 for a name the table lacks.
  */
 function signalNumber(signal: NodeJS.Signals): number {
-  const number = (
-    osConstants.signals as Record<string, number | undefined>
-  )[signal];
+  const number = (osConstants.signals as Record<string, number | undefined>)[
+    signal
+  ];
   return number ?? 0;
 }
 
@@ -98,25 +94,51 @@ function signalNumber(signal: NodeJS.Signals): number {
  * stdout or stderr.
  *
  * @param opArgs - Exact op argv, `read` plus the reference.
- * @param timeoutMs - Remaining overall relay deadline for this child.
+ * @param deadlineAt - Absolute overall relay deadline timestamp.
  * @param env - Environment passed to the delegated `op` process.
  * @returns {Promise<RelayChildResult>} Captured child output or spawn error.
  */
 function runRelayOpChild(
   opArgs: readonly string[],
-  timeoutMs: number,
+  deadlineAt: number,
   env: NodeJS.ProcessEnv,
 ): Promise<RelayChildResult> {
+  const opPath = resolveOpPath();
+
   return new Promise((resolve) => {
+    // Expired work is refused, never started: the check runs after the
+    // path, env, and argv are formed, immediately before the spawn.
+    if (deadlineAt - Date.now() <= 0) {
+      resolve({
+        exitCode: 1,
+        ok: true,
+        stderrText: "",
+        stdout: Buffer.alloc(0),
+        timedOut: true,
+      });
+      return;
+    }
+
     // D401: the caller owns the process group. The relay child runs in
     // opchain's own process group (not detached), so a caller that
     // starts opchain with Setpgid and kills the group when the read
     // ends reaps everything the read started - including after a
     // SIGKILL of opchain itself.
-    const child: ChildProcess = spawn(resolveOpPath(), opArgs, {
-      env,
-      stdio: ["inherit", "pipe", "pipe"],
-    });
+    let child: ChildProcess;
+    try {
+      child = spawn(opPath, opArgs, {
+        env,
+        stdio: ["inherit", "pipe", "pipe"],
+      });
+    } catch (error) {
+      // spawn() can throw synchronously (an invalid path or argument);
+      // that is the same spawn failure as the asynchronous `error` event.
+      resolve({
+        error: error instanceof Error ? error : new Error("relay spawn failed"),
+        ok: false,
+      });
+      return;
+    }
     const stdoutChunks: Buffer[] = [];
     const stderrChunks: Buffer[] = [];
     let stderrBytes = 0;
@@ -169,29 +191,32 @@ function runRelayOpChild(
       });
     };
 
-    // A zero or negative remaining budget fires at once rather than
-    // disabling the timer: expired work is refused, never unlimited.
-    const timeout = setTimeout(() => {
-      if (settled) {
-        return;
-      }
-
-      timedOut = true;
-      killDirectChild("SIGTERM");
-      killTimer = setTimeout(() => {
+    // The timer is armed from the remaining absolute time, measured
+    // after setup, never from a duration computed earlier.
+    const timeout = setTimeout(
+      () => {
         if (settled) {
           return;
         }
 
-        killDirectChild("SIGKILL");
-      }, OP_SIGKILL_GRACE_MS);
-      // The deadline may outlive the direct child: a descendant
-      // holding its pipes keeps close from firing, so an
-      // already-exited child settles here instead of hanging.
-      if (child.exitCode !== null || child.signalCode !== null) {
-        settleTimedOut();
-      }
-    }, Math.max(0, timeoutMs));
+        timedOut = true;
+        killDirectChild("SIGTERM");
+        killTimer = setTimeout(() => {
+          if (settled) {
+            return;
+          }
+
+          killDirectChild("SIGKILL");
+        }, OP_SIGKILL_GRACE_MS);
+        // The deadline may outlive the direct child: a descendant
+        // holding its pipes keeps close from firing, so an
+        // already-exited child settles here instead of hanging.
+        if (child.exitCode !== null || child.signalCode !== null) {
+          settleTimedOut();
+        }
+      },
+      Math.max(0, deadlineAt - Date.now()),
+    );
 
     child.stdout?.on("data", (chunk: Buffer) => {
       stdoutChunks.push(chunk);
@@ -237,13 +262,16 @@ function runRelayOpChild(
 
       settled = true;
       teardown();
+      const exitCode =
+        code ?? (signal !== null ? 128 + signalNumber(signal) : 1);
       resolve({
-        exitCode:
-          code ?? (signal !== null ? 128 + signalNumber(signal) : 1),
+        exitCode,
         ok: true,
         stderrText: Buffer.concat(stderrChunks).toString("utf8"),
         stdout: Buffer.concat(stdoutChunks),
-        timedOut,
+        // A success that lands after the deadline is a timeout, even
+        // when the timer callback has not run yet.
+        timedOut: timedOut || (exitCode === 0 && Date.now() >= deadlineAt),
       });
     });
   });
@@ -277,27 +305,24 @@ function writeDescriptorChunk(
   chunk: Buffer,
 ): Promise<DescriptorWriteResult> {
   return new Promise((resolve, reject) => {
-    fsWriteCallback(
-      fd,
-      chunk,
-      0,
-      chunk.length,
-      null,
-      (error, bytesWritten) => {
-        if (error !== null) {
-          reject(error);
-          return;
-        }
+    fsWriteCallback(fd, chunk, 0, chunk.length, null, (error, bytesWritten) => {
+      if (error !== null) {
+        reject(error);
+        return;
+      }
 
-        resolve({ bytesWritten });
-      },
-    );
+      resolve({ bytesWritten });
+    });
   });
 }
 
 /**
  * Races one promise against the relay deadline without leaving the
  * deadline timer alive after the promise settles.
+ *
+ * A settlement observed at or after the absolute deadline is the
+ * deadline, never the late value or error: the completion callback can
+ * be dispatched ahead of a deadline timer that is already due.
  *
  * @param promise - One deadline-bounded operation.
  * @param deadlineAt - Absolute deadline timestamp.
@@ -313,14 +338,16 @@ function raceWithDeadline<T>(
       resolve({ deadline: true });
     }, delay);
 
+    // Both handlers stay attached even when the deadline has already
+    // passed, so a late rejection is always handled.
     promise.then(
       (value) => {
         clearTimeout(timer);
-        resolve({ value });
+        resolve(Date.now() >= deadlineAt ? { deadline: true } : { value });
       },
       (error) => {
         clearTimeout(timer);
-        resolve({ error });
+        resolve(Date.now() >= deadlineAt ? { deadline: true } : { error });
       },
     );
   });
@@ -390,6 +417,12 @@ async function writeValueToDescriptor(
     }
 
     offset += outcome.value.bytesWritten;
+  }
+
+  // Success is reported only inside the deadline, including for a
+  // zero-byte value that issued no write at all.
+  if (Date.now() >= deadlineAt) {
+    return "deadline";
   }
 
   return "written";
@@ -489,11 +522,9 @@ export async function runValueRelay(
   // Descriptor checks, fail-closed, in order.
   const fd = parseRelayFdNumber(rawValueFd);
   if (fd === null) {
-    return finish(
-      { check: "descriptor-not-open", kind: "refused" },
-      0,
-      { fd: undefined },
-    );
+    return finish({ check: "descriptor-not-open", kind: "refused" }, 0, {
+      fd: undefined,
+    });
   }
 
   const descriptorCheck = evaluateRelayDescriptor(fd);
@@ -563,6 +594,7 @@ export async function runValueRelay(
     accountName: resolvedProfile.accountName,
     allowEnvToken: options.allowEnvToken,
     commandTimeoutMs: remainingMs(),
+    deadlineAt,
     securityPath: resolveSecurityPath(),
     serviceName: "opchain",
   });
@@ -588,7 +620,7 @@ export async function runValueRelay(
   // nowhere.
   const childResult = await runRelayOpChild(
     ["read", command.reference],
-    remainingMs(),
+    deadlineAt,
     buildTokenChildEnv(tokenResult.value),
   );
   if (!childResult.ok) {

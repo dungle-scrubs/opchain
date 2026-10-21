@@ -1,10 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { spawn, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { writeAutoReadWriteConfig } from "../helpers/write-opchain-config.ts";
+import { spawnBunCli } from "../helpers/run-relay.ts";
 
 const OP_FIXTURE_PATH = join(process.cwd(), "test/fixtures/bin/op");
 const SECURITY_FIXTURE_PATH = join(process.cwd(), "test/fixtures/bin/security");
@@ -127,25 +128,20 @@ type GroupRun = {
 
 /**
  * Starts one opchain relay run in its own process group, the way fleet's
- * caller does per D401.
+ * caller does per D401, through the guarded stdio-flake-retry spawn.
  *
  * @param argv - Arguments after `bun run src/index.ts`.
  * @param env - Extra environment variables.
- * @returns {GroupRun} Handle for the caller-owned process group.
+ * @returns {Promise<GroupRun>} Handle for the caller-owned process group.
  */
-function startRelayInOwnGroup(
+async function startRelayInOwnGroup(
   argv: readonly string[],
   env: Record<string, string> = {},
-): GroupRun {
+): Promise<GroupRun> {
   const homePath = mkdtempSync(join(tmpdir(), "opchain-relay-life-"));
   writeAutoReadWriteConfig(homePath);
 
-  const child = spawn(process.execPath, [
-    "run",
-    "src/index.ts",
-    ...argv,
-  ], {
-    cwd: process.cwd(),
+  const { child, completion } = await spawnBunCli(argv, {
     detached: true,
     env: {
       ...process.env,
@@ -158,25 +154,10 @@ function startRelayInOwnGroup(
     stdio: ["ignore", "pipe", "pipe", "pipe"],
   });
 
-  // Drain the relay descriptor so a completed write can never block.
-  const valueStream = child.stdio[3] as unknown as
-    | { on(event: "data", listener: (chunk: Buffer) => void): unknown; resume(): void }
-    | null
-    | undefined;
-  valueStream?.on("data", () => {});
-  valueStream?.resume();
-
-  const exitCode = new Promise<number | null>((resolve) => {
-    child.on("close", (code) => {
-      resolve(code);
-    });
-    child.on("error", () => {
-      resolve(null);
-    });
-  });
-
+  // The guarded spawn drains every piped descriptor, so a completed
+  // write can never block.
   return {
-    exitCode,
+    exitCode: completion.then(({ code }) => code),
     killGroup: (signal) => {
       if (child.pid !== undefined) {
         try {
@@ -192,7 +173,7 @@ function startRelayInOwnGroup(
 
 describe("relay process lifecycle under a caller-owned group", () => {
   test("a caller group kill during token resolution removes the provider", async () => {
-    const run = startRelayInOwnGroup(
+    const run = await startRelayInOwnGroup(
       ["primary", "--read", "--value-fd", "3", "op", "read", REFERENCE],
       { OPCHAIN_TEST_SECURITY_SLEEP_MS: "30000" },
     );
@@ -215,7 +196,7 @@ describe("relay process lifecycle under a caller-owned group", () => {
   }, 40_000);
 
   test("a caller group kill removes a TERM-ignoring op child", async () => {
-    const run = startRelayInOwnGroup(
+    const run = await startRelayInOwnGroup(
       ["primary", "--read", "--value-fd", "3", "op", "read", REFERENCE],
       {
         OPCHAIN_TEST_OP_IGNORE_TERM: "1",
@@ -243,7 +224,7 @@ describe("relay process lifecycle under a caller-owned group", () => {
   }, 40_000);
 
   test("the deadline escalation kills a TERM-ignoring child itself", async () => {
-    const run = startRelayInOwnGroup(
+    const run = await startRelayInOwnGroup(
       ["primary", "--read", "--value-fd", "3", "op", "read", REFERENCE],
       {
         OPCHAIN_TEST_OP_IGNORE_TERM: "1",

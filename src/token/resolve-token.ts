@@ -19,6 +19,11 @@ type ResolveTokenRequest = {
    * token resolution.
    */
   readonly commandTimeoutMs?: number;
+  /**
+   * Absolute deadline timestamp passed through to the security provider,
+   * so its spawn and kill timer follow the caller's deadline exactly.
+   */
+  readonly deadlineAt?: number;
   readonly emitEvent?: (event: TelemetryEvent) => void;
   readonly securityPath: string;
   readonly serviceName: string;
@@ -85,6 +90,7 @@ export async function resolveToken(
   const securityResult = await getTokenFromSecurity({
     accountName: request.accountName,
     commandTimeoutMs: request.commandTimeoutMs,
+    deadlineAt: request.deadlineAt,
     securityPath: request.securityPath,
     serviceName: request.serviceName,
   });

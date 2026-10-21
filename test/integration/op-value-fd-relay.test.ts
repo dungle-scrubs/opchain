@@ -129,16 +129,19 @@ describe("op --value-fd relay", () => {
 
   describe("argument passthrough without relay mode", () => {
     test("delivers wrapped-program arguments after op byte for byte", async () => {
-      const run = await runRelay([
-        "primary",
-        "--read",
-        "op",
-        "run",
-        "--",
-        "/bin/echo",
-        "--value-fd=3",
-        "--out-file=x",
-      ], { env: { OPCHAIN_TEST_OP_RUN_EXEC: "1" } });
+      const run = await runRelay(
+        [
+          "primary",
+          "--read",
+          "op",
+          "run",
+          "--",
+          "/bin/echo",
+          "--value-fd=3",
+          "--out-file=x",
+        ],
+        { env: { OPCHAIN_TEST_OP_RUN_EXEC: "1" } },
+      );
 
       expect(run.result).toEqual({ code: 0, signal: null });
       expect(run.stdoutText).toContain("--value-fd=3 --out-file=x");
@@ -151,15 +154,7 @@ describe("op --value-fd relay", () => {
   describe("successful relay", () => {
     test("delivers the value byte-exact on descriptor 3 with empty stdout and stderr", async () => {
       const run = await runRelay(
-        [
-          "primary",
-          "--read",
-          "--value-fd",
-          "3",
-          "op",
-          "read",
-          REFERENCE,
-        ],
+        ["primary", "--read", "--value-fd", "3", "op", "read", REFERENCE],
         { env: { OPCHAIN_TEST_OP_RELAY_VALUE: SYNTHETIC_VALUE } },
       );
 
@@ -172,23 +167,18 @@ describe("op --value-fd relay", () => {
     test("delivers a value larger than the pipe buffer byte-exact", async () => {
       const totalBytes = 262_145; // 256 KiB of x plus trailing newline
       const run = await runRelay(
-        [
-          "primary",
-          "--read",
-          "--value-fd=3",
-          "op",
-          "read",
-          REFERENCE,
-        ],
+        ["primary", "--read", "--value-fd=3", "op", "read", REFERENCE],
         { env: { OPCHAIN_TEST_OP_RELAY_VALUE_BYTES: "262144" } },
       );
 
       const value = run.valueBytes;
       expect(run.result).toEqual({ code: 0, signal: null });
       expect(value.length).toBe(totalBytes);
-      expect(value.subarray(0, totalBytes - 1).equals(Buffer.alloc(totalBytes - 1, 0x78))).toBe(
-        true,
-      );
+      expect(
+        value
+          .subarray(0, totalBytes - 1)
+          .equals(Buffer.alloc(totalBytes - 1, 0x78)),
+      ).toBe(true);
       expect(value.subarray(totalBytes - 1).toString("utf8")).toBe("\n");
       expect(run.stdoutText).toBe("");
       expect(run.stderrText).toBe("");
@@ -215,8 +205,7 @@ describe("op --value-fd relay", () => {
         {
           env: {
             OPCHAIN_TEST_OP_RELAY_VALUE: SYNTHETIC_VALUE,
-            OPCHAIN_TEST_OP_RELAY_WARN_STDERR:
-              "sensitive-warning-do-not-print",
+            OPCHAIN_TEST_OP_RELAY_WARN_STDERR: "sensitive-warning-do-not-print",
           },
         },
       );
@@ -298,9 +287,9 @@ describe("op --value-fd relay", () => {
       const expectScript = [
         "log_user 1",
         "set timeout 15",
-        "spawn sh -c \"exec $env(BUN_BIN) run src/index.ts primary --read --allow-reveal --value-fd 3 op read op://Infra/reflect-intake-restic/password\"",
+        'spawn sh -c "exec $env(BUN_BIN) run src/index.ts primary --read --allow-reveal --value-fd 3 op read op://Infra/reflect-intake-restic/password"',
         "expect eof",
-        'lassign [wait] pid spawnid os_error_flag status',
+        "lassign [wait] pid spawnid os_error_flag status",
         "exit $status",
       ].join("\n");
 
@@ -398,6 +387,12 @@ describe("op --value-fd relay", () => {
     }, 20_000);
 
     test("refuses a descriptor duplicating a piped stdout endpoint", async () => {
+      // The helper execs the CLI under `sh -c 'exec 3>&1 "$0" "$@"'`, so
+      // fd 3 is a genuine child-side dup2 of the redirected stdout pipe:
+      // a numeric stdio slot passes the PARENT's fd instead (Node's
+      // documented semantics; Bun 1.4.3 on Linux behaves that way), which
+      // is no alias at all - under it the relay once leaked the value to
+      // the parent's stdout and exited 0 on CI.
       const run = await runRelay(
         ["primary", "--read", "--value-fd", "3", "op", "read", REFERENCE],
         { stdio3: { kind: "duplicate-of", fd: 1 } },
@@ -408,9 +403,11 @@ describe("op --value-fd relay", () => {
       expect(run.stdoutText).toBe("");
       expect(run.valueBytes.length).toBe(0);
       expect(existsSync(run.opLogPath)).toBe(false);
+      expect(existsSync(run.securityLogPath)).toBe(false);
     });
 
     test("refuses a descriptor duplicating a piped stderr endpoint", async () => {
+      // Same child-side dup fixture as the stdout case, onto fd 2.
       const run = await runRelay(
         ["primary", "--read", "--value-fd", "3", "op", "read", REFERENCE],
         { stdio3: { kind: "duplicate-of", fd: 2 } },
@@ -418,7 +415,10 @@ describe("op --value-fd relay", () => {
 
       expect(run.result).toEqual({ code: 1, signal: null });
       expect(run.stderrText).toBe("opchain: relay: descriptor-alias\n");
+      expect(run.stdoutText).toBe("");
       expect(run.valueBytes.length).toBe(0);
+      expect(existsSync(run.opLogPath)).toBe(false);
+      expect(existsSync(run.securityLogPath)).toBe(false);
     });
 
     test("allows a separate pipe while stdout is a different pipe", async () => {
@@ -466,9 +466,9 @@ describe("op --value-fd relay", () => {
       const expectScript = [
         "log_user 1",
         "set timeout 15",
-        "spawn sh -c \"exec $env(BUN_BIN) run src/index.ts primary --read --value-fd 3 op read op://Infra/reflect-intake-restic/password 3>&1\"",
+        'spawn sh -c "exec $env(BUN_BIN) run src/index.ts primary --read --value-fd 3 op read op://Infra/reflect-intake-restic/password 3>&1"',
         "expect eof",
-        'lassign [wait] pid spawnid os_error_flag status',
+        "lassign [wait] pid spawnid os_error_flag status",
         "exit $status",
       ].join("\n");
 

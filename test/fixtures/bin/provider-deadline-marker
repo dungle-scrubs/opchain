@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Deadline-fixture token provider: proves it started via a marker file.
+#
+# OPCHAIN_TEST_HELPER_MARKER_PATH      - required path of the marker file
+# OPCHAIN_TEST_HELPER_MARKER_DELAY_MS  - delay before writing the marker (default 0)
+# OPCHAIN_TEST_HELPER_EXIT_AFTER_MS    - sleep after the marker before exit 0 (default 30000)
+# OPCHAIN_TEST_HELPER_IGNORE_TERM      - set: ignore SIGTERM so only SIGKILL ends the run
+#
+# Both sleeps close their descriptors so an orphaned stub cannot hold
+# the provider pipes open past its kill.
+
+if [[ -n "${OPCHAIN_TEST_HELPER_IGNORE_TERM:-}" ]]; then
+  trap '' TERM
+fi
+
+if [[ -n "${OPCHAIN_TEST_HELPER_MARKER_DELAY_MS:-}" ]]; then
+  sleep "$(awk "BEGIN { print ${OPCHAIN_TEST_HELPER_MARKER_DELAY_MS} / 1000 }")" <&- >&- 2>&-
+fi
+
+printf 'started\n' > "${OPCHAIN_TEST_HELPER_MARKER_PATH:?}"
+
+sleep "$(awk "BEGIN { print ${OPCHAIN_TEST_HELPER_EXIT_AFTER_MS:-30000} / 1000 }")" <&- >&- 2>&-
+exit 0

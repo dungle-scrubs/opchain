@@ -126,9 +126,11 @@ describe("relay command grammar", () => {
 
   test("refuses a missing --read flag as a non-read path", () => {
     expect(
-      validateRelayCommand(grammarInput(["read", "op://V/I/f"], {
-        hasRead: false,
-      })),
+      validateRelayCommand(
+        grammarInput(["read", "op://V/I/f"], {
+          hasRead: false,
+        }),
+      ),
     ).toEqual({ check: "grammar" });
   });
 });
@@ -137,20 +139,22 @@ describe("child-failure classifier", () => {
   test("classifies the spec's synthetic denied example", () => {
     expect(
       classifyChildFailure(
-        '[ERROR] 2026/10/19 00:31:02 vault "Infra" isn\'t in this account or you don\'t have access to it',
+        "[ERROR] 2026/10/19 00:31:02 vault \"Infra\" isn't in this account or you don't have access to it",
       ),
     ).toBe("denied");
   });
 
   test("classifies permission wording before existence wording", () => {
-    expect(
-      classifyChildFailure("access denied: item not found"),
-    ).toBe("denied");
-    expect(classifyChildFailure("not authorized, no such thing")).toBe("denied");
+    expect(classifyChildFailure("access denied: item not found")).toBe(
+      "denied",
+    );
+    expect(classifyChildFailure("not authorized, no such thing")).toBe(
+      "denied",
+    );
     expect(classifyChildFailure("FORBIDDEN")).toBe("denied");
-    expect(
-      classifyChildFailure("vault isn't a vault in this account"),
-    ).toBe("denied");
+    expect(classifyChildFailure("vault isn't a vault in this account")).toBe(
+      "denied",
+    );
   });
 
   test("classifies the spec's synthetic notfound example", () => {
@@ -172,7 +176,9 @@ describe("child-failure classifier", () => {
 
   test("classifies transport wording, including no such host", () => {
     expect(
-      classifyChildFailure("[ERROR] 2026/10/19 00:31:02 POST: dial tcp: i/o timeout"),
+      classifyChildFailure(
+        "[ERROR] 2026/10/19 00:31:02 POST: dial tcp: i/o timeout",
+      ),
     ).toBe("unreachable");
     expect(classifyChildFailure("dial tcp: no such host")).toBe("unreachable");
     expect(classifyChildFailure("network connection refused")).toBe(
@@ -281,7 +287,10 @@ describe("relay identifiers and telemetry labels", () => {
       relayOutcomeTelemetryLabel({ check: "grammar", kind: "refused" }),
     ).toBe("refused:grammar");
     expect(
-      relayOutcomeTelemetryLabel({ check: "descriptor-alias", kind: "refused" }),
+      relayOutcomeTelemetryLabel({
+        check: "descriptor-alias",
+        kind: "refused",
+      }),
     ).toBe("refused:descriptor-alias");
     expect(
       relayOutcomeTelemetryLabel({

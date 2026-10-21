@@ -34,14 +34,22 @@ export type RelayCheck =
   | "descriptor-alias";
 
 /** Classification of one failed `op` child's private stderr text. */
-export type ChildFailureClass = "denied" | "notfound" | "unreachable" | "unknown";
+export type ChildFailureClass =
+  | "denied"
+  | "notfound"
+  | "unreachable"
+  | "unknown";
 
 /**
  * Which identity-resolution stage failed. Config and profile failures
  * share the `config` identifier; a token provider that outlived the
  * overall relay deadline reports `deadline` instead of `token`.
  */
-export type RelayResolutionStage = "config" | "profile" | "token" | "token-deadline";
+export type RelayResolutionStage =
+  | "config"
+  | "profile"
+  | "token"
+  | "token-deadline";
 
 /** One terminal relay outcome. Exactly one maps to one identifier. */
 export type RelayOutcome =
@@ -55,7 +63,10 @@ export type RelayOutcome =
   | { readonly kind: "write-failed" }
   | { readonly kind: "deadline" }
   | { readonly kind: "spawn" }
-  | { readonly kind: "resolution"; readonly resolutionStage: RelayResolutionStage };
+  | {
+      readonly kind: "resolution";
+      readonly resolutionStage: RelayResolutionStage;
+    };
 
 /** The accepted relay command: one `op://` reference. */
 export type RelayCommand = { readonly reference: string };

@@ -101,7 +101,11 @@ function buildIdentityOpCandidate(
     const hasWrite = flagTokens.includes("--write");
     return {
       accessOverride:
-        hasRead && !hasWrite ? "read" : hasWrite && !hasRead ? "write" : undefined,
+        hasRead && !hasWrite
+          ? "read"
+          : hasWrite && !hasRead
+            ? "write"
+            : undefined,
       allowEnvToken: false,
       allowReveal: false,
       passToken: false,
@@ -110,8 +114,7 @@ function buildIdentityOpCandidate(
       parseError: valueFdIntent ? undefined : parsedFlags.error.message,
       valueFd: undefined,
       valueFdIntent: valueFdIntent || undefined,
-      valueFdMalformed:
-        parsedFlags.error.flag === "--value-fd" || undefined,
+      valueFdMalformed: parsedFlags.error.flag === "--value-fd" || undefined,
     };
   }
 
@@ -133,7 +136,10 @@ function buildIdentityOpCandidate(
       explicitProfile: parsedFlags.valueFlags.get("--profile"),
       // The relay owns this refusal: forbidden flag combinations on a
       // relay line render as `relay: grammar`.
-      parseError: valueFd === undefined ? "Cannot pass both --read and --write." : undefined,
+      parseError:
+        valueFd === undefined
+          ? "Cannot pass both --read and --write."
+          : undefined,
       valueFd,
       valueFdIntent: valueFd !== undefined || undefined,
     };
@@ -247,8 +253,7 @@ function normalizeDebugFormat(input: string | undefined): DebugFormat {
  */
 function expandAttachedValueFd(argv: readonly string[]): readonly string[] {
   const opBoundary = findOpEnvelopeIndex(argv);
-  const prefix =
-    opBoundary === -1 ? argv : argv.slice(0, opBoundary);
+  const prefix = opBoundary === -1 ? argv : argv.slice(0, opBoundary);
   const suffix = opBoundary === -1 ? [] : argv.slice(opBoundary);
 
   const expanded: string[] = [];
@@ -314,7 +319,9 @@ export function parseCliOptions(argv: readonly string[]): CliOptions {
   const normalizedArgv = expandAttachedValueFd(argv);
   const opEnvelopeIndex = findOpEnvelopeIndex(normalizedArgv);
   const rootFlagTokens =
-    opEnvelopeIndex === -1 ? normalizedArgv : normalizedArgv.slice(0, opEnvelopeIndex);
+    opEnvelopeIndex === -1
+      ? normalizedArgv
+      : normalizedArgv.slice(0, opEnvelopeIndex);
   const opEnvelopeTokens =
     opEnvelopeIndex === -1 ? [] : normalizedArgv.slice(opEnvelopeIndex);
 
@@ -333,7 +340,10 @@ export function parseCliOptions(argv: readonly string[]): CliOptions {
       return assembleCliOptions(
         rootRelayCandidate,
         [],
-        { booleanFlags: new Set<string>(), valueFlags: new Map<string, string>() },
+        {
+          booleanFlags: new Set<string>(),
+          valueFlags: new Map<string, string>(),
+        },
         argv,
       );
     }
@@ -359,7 +369,8 @@ export function parseCliOptions(argv: readonly string[]): CliOptions {
   ];
 
   const parsedIdentityOpCommand =
-    parseIdentityOpCommand(commandTokens) ?? synthesizeRelayIntent(normalizedArgv);
+    parseIdentityOpCommand(commandTokens) ??
+    synthesizeRelayIntent(normalizedArgv);
 
   return assembleCliOptions(
     parsedIdentityOpCommand,

@@ -163,30 +163,50 @@ export function runTokenCommand(
  * deadline.
  *
  * Unlike {@link runTokenCommand}, the event loop stays responsive: the
- * child is killed when `timeoutMs` elapses, so a stalled provider is
+ * child is killed when the deadline passes, so a stalled provider is
  * interrupted rather than blocking until `spawnSync` returns. The relay
  * route uses this so its overall deadline covers token resolution.
  *
+ * The relative `timeoutMs` becomes an absolute deadline at entry, and
+ * an optional caller `deadlineAt` caps it, so setup time never extends
+ * the budget. An exhausted budget is refused before spawning.
+ *
  * @param commandPath - Executable path or command name.
  * @param args - Command arguments.
- * @param options - Deadline timeout and optional stdin payload.
+ * @param options - Relative timeout, optional absolute deadline, and optional stdin payload.
  * @returns {Promise<TokenCommandResult>} Command stdout or typed failure.
  */
 export function runTokenCommandAsync(
   commandPath: string,
   args: readonly string[],
-  options: { readonly input?: string; readonly timeoutMs: number },
+  options: {
+    readonly deadlineAt?: number;
+    readonly input?: string;
+    readonly timeoutMs: number;
+  },
 ): Promise<TokenCommandResult> {
+  const deadlineAt = Math.min(
+    Date.now() + options.timeoutMs,
+    options.deadlineAt ?? Number.POSITIVE_INFINITY,
+  );
   const maxBytes = resolveProviderStdoutMaxBytes();
+  const env = buildProviderChildEnv();
 
   return new Promise((resolve) => {
+    // Expired work is refused, never started: the check runs after the
+    // environment is formed, immediately before the spawn.
+    if (deadlineAt - Date.now() <= 0) {
+      resolve({ error: new TokenCommandError("timeout"), ok: false });
+      return;
+    }
+
     let child: ChildProcess;
     try {
       // D401: the provider runs in opchain's own process group (not
       // detached), so the caller that owns opchain's group reaps it
       // with everything else the relay started.
       child = spawn(commandPath, args, {
-        env: buildProviderChildEnv(),
+        env,
         stdio: ["pipe", "pipe", "pipe"],
       });
     } catch {
@@ -244,26 +264,28 @@ export function runTokenCommandAsync(
       resolve({ error: new TokenCommandError("timeout"), ok: false });
     };
 
-    timeout = setTimeout(() => {
-      if (settled) {
-        return;
-      }
+    timeout = setTimeout(
+      () => {
+        if (settled) {
+          return;
+        }
 
-      timedOut = true;
-      killDirectChild("SIGTERM");
-      // A SIGTERM-ignoring provider still holds the relay deadline, so
-      // escalate to an unblockable SIGKILL.
-      killTimer = setTimeout(() => {
-        killDirectChild("SIGKILL");
-      }, PROVIDER_SIGKILL_GRACE_MS);
-      // The deadline may outlive the provider: a descendant holding
-      // its pipes keeps close from firing, so an already-exited child
-      // settles here instead of hanging. A zero budget fires at once
-      // rather than disabling the timer.
-      if (child.exitCode !== null || child.signalCode !== null) {
-        settleTimedOut();
-      }
-    }, Math.max(0, options.timeoutMs));
+        timedOut = true;
+        killDirectChild("SIGTERM");
+        // A SIGTERM-ignoring provider still holds the relay deadline, so
+        // escalate to an unblockable SIGKILL.
+        killTimer = setTimeout(() => {
+          killDirectChild("SIGKILL");
+        }, PROVIDER_SIGKILL_GRACE_MS);
+        // The deadline may outlive the provider: a descendant holding
+        // its pipes keeps close from firing, so an already-exited child
+        // settles here instead of hanging.
+        if (child.exitCode !== null || child.signalCode !== null) {
+          settleTimedOut();
+        }
+      },
+      Math.max(0, deadlineAt - Date.now()),
+    );
 
     if (options.input !== undefined) {
       child.stdin?.write(options.input);
@@ -322,6 +344,13 @@ export function runTokenCommandAsync(
 
       if (Buffer.byteLength(stdout, "utf8") > maxBytes) {
         finish({ error: new TokenCommandError("stdout_limit"), ok: false });
+        return;
+      }
+
+      // A success that lands after the deadline is a timeout, even when
+      // the timer callback has not run yet.
+      if (Date.now() >= deadlineAt) {
+        finish({ error: new TokenCommandError("timeout"), ok: false });
         return;
       }
 
