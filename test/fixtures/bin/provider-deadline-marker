@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Deadline-fixture token provider: proves it started via a marker file.
+#
+# OPCHAIN_TEST_HELPER_MARKER_PATH      - required path of the marker file
+# OPCHAIN_TEST_HELPER_MARKER_DELAY_MS  - delay before writing the marker (default 0)
+# OPCHAIN_TEST_HELPER_EXIT_AFTER_MS    - sleep after the marker before exit 0 (default 30000)
+# OPCHAIN_TEST_HELPER_IGNORE_TERM      - set: ignore SIGTERM so only SIGKILL ends the run
+# OPCHAIN_TEST_HELPER_PID_PATH         - optional path receiving this provider's pid
+#
+# Both sleeps close their descriptors so an orphaned stub cannot hold
+# the provider pipes open past its kill. The final sleep replaces the
+# shell, so a kill of the direct child leaves no orphaned sleep; an
+# ignored TERM stays ignored across the exec.
+
+if [[ -n "${OPCHAIN_TEST_HELPER_IGNORE_TERM:-}" ]]; then
+  trap '' TERM
+fi
+
+if [[ -n "${OPCHAIN_TEST_HELPER_MARKER_DELAY_MS:-}" ]]; then
+  sleep "$(awk "BEGIN { print ${OPCHAIN_TEST_HELPER_MARKER_DELAY_MS} / 1000 }")" <&- >&- 2>&-
+fi
+
+if [[ -n "${OPCHAIN_TEST_HELPER_PID_PATH:-}" ]]; then
+  printf '%s\n' "$$" > "$OPCHAIN_TEST_HELPER_PID_PATH"
+fi
+
+# Written after the trap and the pid file: its presence proves both.
+printf 'started\n' > "${OPCHAIN_TEST_HELPER_MARKER_PATH:?}"
+
+exec sleep "$(awk "BEGIN { print ${OPCHAIN_TEST_HELPER_EXIT_AFTER_MS:-30000} / 1000 }")" <&- >&- 2>&-

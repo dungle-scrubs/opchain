@@ -10,7 +10,7 @@ const OP_BOOLEAN_FLAGS = new Set([
   "--allow-reveal",
   "--pass-token",
 ]);
-const OP_VALUE_FLAGS = new Set(["--profile"]);
+const OP_VALUE_FLAGS = new Set(["--profile", "--value-fd"]);
 
 /**
  * Every op-execution flag name, for messages that name a misplaced flag.
@@ -37,6 +37,13 @@ export type CliOptions = {
   readonly explicitProfile: string | undefined;
   readonly help: boolean;
   readonly parseError?: string;
+  readonly valueFd?: string;
+  /** True when a --value-fd spelling appeared in the op option prefix. */
+  readonly valueFdIntent?: boolean;
+  /** True when option parsing failed on the --value-fd value itself. */
+  readonly valueFdMalformed?: boolean;
+  /** True when option parsing refused the line outright; the relay renders grammar. */
+  readonly relayParseRefused?: boolean;
 };
 
 type ParsedIdentityOpCommand = {
@@ -47,6 +54,13 @@ type ParsedIdentityOpCommand = {
   readonly commandArgs: readonly string[];
   readonly explicitProfile: string | undefined;
   readonly parseError?: string;
+  readonly valueFd: string | undefined;
+  /** True when a --value-fd spelling appeared in the op option prefix. */
+  readonly valueFdIntent?: boolean;
+  /** True when the parse failed on the --value-fd value itself. */
+  readonly valueFdMalformed?: boolean;
+  /** True when option parsing refused the line outright; the relay renders grammar. */
+  readonly relayParseRefused?: boolean;
 };
 
 /**
@@ -78,14 +92,29 @@ function buildIdentityOpCandidate(
   });
 
   if (!parsedFlags.ok) {
+    // A relay-intent line keeps its routing even when parsing fails, so
+    // the relay renders one anchored identifier instead of the generic
+    // parser message. The read/write intent is recovered from the raw
+    // tokens so the relay grammar still sees the real flags.
+    const valueFdIntent = flagTokens.includes("--value-fd");
+    const hasRead = flagTokens.includes("--read");
+    const hasWrite = flagTokens.includes("--write");
     return {
-      accessOverride: undefined,
+      accessOverride:
+        hasRead && !hasWrite
+          ? "read"
+          : hasWrite && !hasRead
+            ? "write"
+            : undefined,
       allowEnvToken: false,
       allowReveal: false,
       passToken: false,
       commandArgs: [identity, "op", ...opArgs],
       explicitProfile: undefined,
-      parseError: parsedFlags.error.message,
+      parseError: valueFdIntent ? undefined : parsedFlags.error.message,
+      valueFd: undefined,
+      valueFdIntent: valueFdIntent || undefined,
+      valueFdMalformed: parsedFlags.error.flag === "--value-fd" || undefined,
     };
   }
 
@@ -97,6 +126,7 @@ function buildIdentityOpCandidate(
     parsedFlags.booleanFlags.has("--read") &&
     parsedFlags.booleanFlags.has("--write")
   ) {
+    const valueFd = parsedFlags.valueFlags.get("--value-fd");
     return {
       accessOverride: undefined,
       allowEnvToken: parsedFlags.booleanFlags.has("--allow-env-token"),
@@ -104,7 +134,14 @@ function buildIdentityOpCandidate(
       passToken: parsedFlags.booleanFlags.has("--pass-token"),
       commandArgs: [identity, "op", ...opArgs],
       explicitProfile: parsedFlags.valueFlags.get("--profile"),
-      parseError: "Cannot pass both --read and --write.",
+      // The relay owns this refusal: forbidden flag combinations on a
+      // relay line render as `relay: grammar`.
+      parseError:
+        valueFd === undefined
+          ? "Cannot pass both --read and --write."
+          : undefined,
+      valueFd,
+      valueFdIntent: valueFd !== undefined || undefined,
     };
   }
 
@@ -119,6 +156,8 @@ function buildIdentityOpCandidate(
     passToken: parsedFlags.booleanFlags.has("--pass-token"),
     commandArgs: [identity, "op", ...opArgs],
     explicitProfile: parsedFlags.valueFlags.get("--profile"),
+    valueFd: parsedFlags.valueFlags.get("--value-fd"),
+    valueFdIntent: parsedFlags.valueFlags.has("--value-fd") || undefined,
   };
 }
 
@@ -200,17 +239,91 @@ function normalizeDebugFormat(input: string | undefined): DebugFormat {
 }
 
 /**
- * Parses the current CLI options and strips handled global flags.
+ * Splits attached `--value-fd=<value>` spellings into separate tokens,
+ * but only inside opchain's own option prefix.
+ *
+ * Everything after the `op` boundary marker is delegated `op` argv -
+ * including a wrapped program's arguments after `--` - and must pass
+ * through byte for byte, so the boundary is located on the raw argv
+ * before any splitting. Any resulting value, integer or not, reaches
+ * the relay descriptor checks, which refuse non-integers fail-closed.
  *
  * @param argv - User-provided CLI arguments.
- * @returns {CliOptions} Parsed CLI options.
+ * @returns {readonly string[]} Arguments with attached --value-fd spellings split before the op marker.
  */
+function expandAttachedValueFd(argv: readonly string[]): readonly string[] {
+  const opBoundary = findOpEnvelopeIndex(argv);
+  const prefix = opBoundary === -1 ? argv : argv.slice(0, opBoundary);
+  const suffix = opBoundary === -1 ? [] : argv.slice(opBoundary);
+
+  const expanded: string[] = [];
+  for (const token of prefix) {
+    if (token.startsWith("--value-fd=")) {
+      expanded.push("--value-fd", token.slice("--value-fd=".length));
+      continue;
+    }
+
+    expanded.push(token);
+  }
+
+  return [...expanded, ...suffix];
+}
+
+/**
+ * Recovers relay intent from a raw argv that option parsing refused or
+ * could not shape into an envelope.
+ *
+ * Whenever `--value-fd` appears in opchain's own option prefix with an
+ * `op` marker and an identity token, the line belongs to the relay
+ * route even when parsing fails on another token (an unknown option, a
+ * root-parser error): the relay then renders one anchored identifier
+ * instead of the generic parser message.
+ *
+ * @param argv - Normalized CLI arguments.
+ * @returns {ParsedIdentityOpCommand | null} A grammar-refusal candidate, or null when the line carries no relay intent.
+ */
+function synthesizeRelayIntent(
+  argv: readonly string[],
+): ParsedIdentityOpCommand | null {
+  const opBoundary = findOpEnvelopeIndex(argv);
+  if (opBoundary < 1) {
+    return null;
+  }
+
+  const prefix = argv.slice(0, opBoundary);
+  const hasValueFd = prefix.some(
+    (token) => token === "--value-fd" || token.startsWith("--value-fd="),
+  );
+  if (!hasValueFd) {
+    return null;
+  }
+
+  const identity = prefix.find((token) => !token.startsWith("-"));
+  if (identity === undefined) {
+    return null;
+  }
+
+  return {
+    accessOverride: undefined,
+    allowEnvToken: false,
+    allowReveal: false,
+    passToken: false,
+    commandArgs: [identity, "op", ...argv.slice(opBoundary + 1)],
+    explicitProfile: undefined,
+    relayParseRefused: true,
+    valueFd: undefined,
+    valueFdIntent: true,
+  };
+}
 export function parseCliOptions(argv: readonly string[]): CliOptions {
-  const opEnvelopeIndex = findOpEnvelopeIndex(argv);
+  const normalizedArgv = expandAttachedValueFd(argv);
+  const opEnvelopeIndex = findOpEnvelopeIndex(normalizedArgv);
   const rootFlagTokens =
-    opEnvelopeIndex === -1 ? argv : argv.slice(0, opEnvelopeIndex);
+    opEnvelopeIndex === -1
+      ? normalizedArgv
+      : normalizedArgv.slice(0, opEnvelopeIndex);
   const opEnvelopeTokens =
-    opEnvelopeIndex === -1 ? [] : argv.slice(opEnvelopeIndex);
+    opEnvelopeIndex === -1 ? [] : normalizedArgv.slice(opEnvelopeIndex);
 
   const parsedRootFlags = parseFlagArguments(rootFlagTokens, {
     booleanFlags: ROOT_BOOLEAN_FLAGS,
@@ -218,6 +331,23 @@ export function parseCliOptions(argv: readonly string[]): CliOptions {
   });
 
   if (!parsedRootFlags.ok) {
+    // A relay-intent line still routes to the relay, whose grammar
+    // refusal is the one anchored identifier for the line.
+    const rootRelayCandidate = synthesizeRelayIntent(normalizedArgv);
+    if (rootRelayCandidate !== null) {
+      // Root flags failed to parse; the relay candidate routes on its
+      // own and the refusal is the relay's, so no root flag applies.
+      return assembleCliOptions(
+        rootRelayCandidate,
+        [],
+        {
+          booleanFlags: new Set<string>(),
+          valueFlags: new Map<string, string>(),
+        },
+        argv,
+      );
+    }
+
     return {
       accessOverride: undefined,
       allowEnvToken: false,
@@ -229,6 +359,7 @@ export function parseCliOptions(argv: readonly string[]): CliOptions {
       explicitProfile: undefined,
       help: false,
       parseError: parsedRootFlags.error.message,
+      valueFd: undefined,
     };
   }
 
@@ -237,25 +368,58 @@ export function parseCliOptions(argv: readonly string[]): CliOptions {
     ...opEnvelopeTokens,
   ];
 
-  const parsedIdentityOpCommand = parseIdentityOpCommand(commandTokens);
+  const parsedIdentityOpCommand =
+    parseIdentityOpCommand(commandTokens) ??
+    synthesizeRelayIntent(normalizedArgv);
 
+  return assembleCliOptions(
+    parsedIdentityOpCommand,
+    commandTokens,
+    parsedRootFlags,
+    argv,
+  );
+}
+
+type ParsedRootFlags = {
+  readonly booleanFlags: ReadonlySet<string>;
+  readonly valueFlags: ReadonlyMap<string, string>;
+};
+
+/**
+ * Assembles the final CLI options from one parsed op candidate.
+ *
+ * @param candidate - Parsed identity op command, or undefined.
+ * @param commandTokens - Positional command tokens after root stripping.
+ * @param parsedRootFlags - Parsed root flags.
+ * @param argv - Raw user-provided arguments.
+ * @returns {CliOptions} Parsed CLI options.
+ */
+function assembleCliOptions(
+  candidate: ParsedIdentityOpCommand | null,
+  commandTokens: readonly string[],
+  parsedRootFlags: ParsedRootFlags,
+  argv: readonly string[],
+): CliOptions {
   return {
-    accessOverride: parsedIdentityOpCommand?.accessOverride,
-    allowEnvToken: parsedIdentityOpCommand?.allowEnvToken ?? false,
-    allowReveal: parsedIdentityOpCommand?.allowReveal ?? false,
-    passToken: parsedIdentityOpCommand?.passToken ?? false,
-    commandArgs: parsedIdentityOpCommand?.commandArgs ?? commandTokens,
+    accessOverride: candidate?.accessOverride,
+    allowEnvToken: candidate?.allowEnvToken ?? false,
+    allowReveal: candidate?.allowReveal ?? false,
+    passToken: candidate?.passToken ?? false,
+    commandArgs: candidate?.commandArgs ?? commandTokens,
     debug: parsedRootFlags.booleanFlags.has("--debug"),
     debugFormat: normalizeDebugFormat(
       parsedRootFlags.valueFlags.get("--debug-format"),
     ),
-    explicitProfile: parsedIdentityOpCommand?.explicitProfile,
+    explicitProfile: candidate?.explicitProfile,
     help:
       argv.length === 0 ||
       parsedRootFlags.booleanFlags.has("--help") ||
       parsedRootFlags.booleanFlags.has("-h"),
-    ...(parsedIdentityOpCommand?.parseError === undefined
+    valueFd: candidate?.valueFd,
+    valueFdIntent: candidate?.valueFdIntent,
+    valueFdMalformed: candidate?.valueFdMalformed,
+    ...(candidate?.parseError === undefined
       ? {}
-      : { parseError: parsedIdentityOpCommand.parseError }),
+      : { parseError: candidate.parseError }),
   };
 }

@@ -9,6 +9,7 @@ import {
 } from "../op/reveal-guard.ts";
 
 import { planRunEnv } from "../op/run-env.ts";
+import { runValueRelay } from "../op/relay-run.ts";
 
 import { buildRunChildEnv, buildTokenChildEnv } from "../cli/child-env.ts";
 import type { CommandRequest } from "../cli/command-request.ts";
@@ -37,11 +38,7 @@ const OP_SIGKILL_GRACE_MS = 2_000;
  * so Ctrl+C or a hangup reaches `op` and its wrapped program instead of
  * killing opchain and orphaning them.
  */
-const STOP_SIGNALS: readonly NodeJS.Signals[] = [
-  "SIGTERM",
-  "SIGINT",
-  "SIGHUP",
-];
+const STOP_SIGNALS: readonly NodeJS.Signals[] = ["SIGTERM", "SIGINT", "SIGHUP"];
 
 type OpChildResult =
   | {
@@ -63,9 +60,9 @@ type OpChildResult =
  * @returns {number} Signal number, or 0 for a name the table lacks.
  */
 function signalNumber(signal: NodeJS.Signals): number {
-  const number = (
-    osConstants.signals as Record<string, number | undefined>
-  )[signal];
+  const number = (osConstants.signals as Record<string, number | undefined>)[
+    signal
+  ];
   return number ?? 0;
 }
 
@@ -166,8 +163,7 @@ function runOpChild(
       resolve({
         // A child ended by a signal reports the shell convention 128 + its
         // operating-system signal number, so callers see why `op` died.
-        exitCode:
-          code ?? (signal !== null ? 128 + signalNumber(signal) : 1),
+        exitCode: code ?? (signal !== null ? 128 + signalNumber(signal) : 1),
         ok: true,
         stderrBytes,
         stdoutBytes,
@@ -265,6 +261,17 @@ export async function runIdentityOp(
 ): Promise<CommandResult> {
   if (request.kind !== "identity") {
     return commandFailure("Invalid command shape for op.\n");
+  }
+
+  // Relay mode (`--value-fd`) validates the command line on its own,
+  // independently of the reveal guard below. Intent alone is enough:
+  // even a line option parsing refused routes here, so the refusal
+  // renders as one anchored relay identifier.
+  if (
+    request.options.valueFd !== undefined ||
+    request.options.valueFdIntent === true
+  ) {
+    return runValueRelay(request);
   }
 
   const { identityName, options } = request;

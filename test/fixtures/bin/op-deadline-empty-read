@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Deadline-fixture `op`: sleeps, then exits 0 having written NOTHING to
+# stdout. Used to drive an accepted-but-empty value through the relay's
+# write phase after the deadline, where the shared op fixture (which
+# always prints at least a newline) cannot.
+#
+# OPCHAIN_TEST_OP_SLEEP_MS - delay before exiting (default 1700)
+
+sleep "$(awk "BEGIN { print ${OPCHAIN_TEST_OP_SLEEP_MS:-1700} / 1000 }")" <&- >&- 2>&-
+exit 0

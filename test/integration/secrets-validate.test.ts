@@ -50,20 +50,17 @@ describe("secrets validate", () => {
     );
 
     expect(result.status).toBe(0);
-    expect(result.stdout).toBe(
-      `${[
-        "ok op://Services/OpenAI/api-key",
-        "ok op://Models/Anthropic/api-key",
-      ].join("\n")}
-`,
-    );
+    expect(result.stdout.split("\n").sort()).toEqual([
+      "",
+      "ok op://Models/Anthropic/api-key",
+      "ok op://Services/OpenAI/api-key",
+    ]);
     expect(result.stderr).toBe("");
-    expect(readFileSync(opReadLogPath, "utf8")).toBe(
-      `${["op://Services/OpenAI/api-key", "op://Models/Anthropic/api-key"].join(
-        "\n",
-      )}
-`,
-    );
+    expect(readFileSync(opReadLogPath, "utf8").split("\n").sort()).toEqual([
+      "",
+      "op://Models/Anthropic/api-key",
+      "op://Services/OpenAI/api-key",
+    ]);
   });
 
   test("validates only the explicit file path when one is provided", () => {

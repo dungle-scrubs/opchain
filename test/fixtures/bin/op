@@ -1,6 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [[ -n "${OPCHAIN_TEST_OP_PID_LOG:-}" ]]; then
+  printf '%s\n' "$$" > "$OPCHAIN_TEST_OP_PID_LOG"
+fi
+
+if [[ -n "${OPCHAIN_TEST_OP_IGNORE_TERM:-}" ]]; then
+  # A child that survives SIGTERM: the relay's deadline escalation must
+  # escalate to SIGKILL. The loop's sleep closes its descriptors so the
+  # orphan cannot hold the child pipes open.
+  trap '' TERM
+  while :; do
+    sleep 1 <&- >&- 2>&-
+  done
+fi
+
 if [[ -n "${OPCHAIN_TEST_OP_LOG:-}" ]]; then
   {
     printf 'args=%s\n' "$*"
@@ -16,7 +30,7 @@ if [[ -n "${OPCHAIN_TEST_OP_LOG:-}" ]]; then
 fi
 
 if [[ -n "${OPCHAIN_TEST_OP_SLEEP_MS:-}" ]]; then
-  sleep "$(awk "BEGIN { print ${OPCHAIN_TEST_OP_SLEEP_MS} / 1000 }")"
+  sleep "$(awk "BEGIN { print ${OPCHAIN_TEST_OP_SLEEP_MS} / 1000 }")" <&- >&- 2>&-
 fi
 
 if [[ "$*" == "vault list" ]]; then
@@ -94,7 +108,32 @@ if [[ "$1" == "read" && $# -ge 2 ]]; then
     exit "${OPCHAIN_TEST_OP_READ_EXIT_CODE:-1}"
   fi
 
-  printf 'secret ok\n'
+  if [[ -n "${OPCHAIN_TEST_OP_LEAVE_DESCENDANT:-}" ]]; then
+  # Exits immediately after spawning a descendant that inherits this
+  # child's stdout pipe and holds it open: the direct child is reaped
+  # while the relay's close event is still blocked on the descendant.
+  sleep 30 &
+  exit 0
+fi
+
+if [[ -n "${OPCHAIN_TEST_OP_RELAY_WARN_STDERR:-}" ]]; then
+    printf '%s\n' "$OPCHAIN_TEST_OP_RELAY_WARN_STDERR" >&2
+  fi
+
+  if [[ -n "${OPCHAIN_TEST_OP_RELAY_LEAK_STDOUT:-}" ]]; then
+    # Writes the value to stdout, then fails: the relay must discard the
+    # buffered bytes, because acceptance is exit 0 only.
+    printf '%s\n' "$OPCHAIN_TEST_OP_RELAY_LEAK_STDOUT"
+    exit 7
+  fi
+
+  if [[ -n "${OPCHAIN_TEST_OP_RELAY_VALUE_BYTES:-}" ]]; then
+    head -c "$OPCHAIN_TEST_OP_RELAY_VALUE_BYTES" /dev/zero | tr '\0' 'x'
+    printf '\n'
+    exit 0
+  fi
+
+  printf '%s\n' "${OPCHAIN_TEST_OP_RELAY_VALUE:-secret ok}"
   exit 0
 fi
 

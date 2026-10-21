@@ -82,7 +82,7 @@ export const CLI_COMMAND_DEFINITIONS: readonly CliCommandDefinition[] = [
     identityScoped: true,
     includeInTopLevel: false,
     invocation:
-      "<identity> [--profile <name>|--read|--write] [--allow-env-token] [--allow-reveal] [--pass-token] op <args...>",
+      "<identity> [--profile <name>|--read|--write] [--allow-env-token] [--allow-reveal] [--pass-token] [--value-fd <fd>] op <args...>",
     kind: "command",
     name: "op",
   },

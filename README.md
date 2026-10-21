@@ -153,7 +153,7 @@ opchain identity list
 opchain token set --identity <name> --profile <name> [--stdin]
 opchain token remove --identity <name> --profile <name> [--yes]
 opchain <identity> [--read|--write|--profile <name>] [--allow-env-token]
-         [--allow-reveal] [--pass-token] op <args...>
+         [--allow-reveal] [--pass-token] [--value-fd <fd>] op <args...>
 opchain <identity> item-structure <item> [--vault <vault>]
 opchain <identity> secrets <list|check|inspect|validate> [path-or-ref]
 opchain <identity> expires <add|remove|list|scan> [args]
@@ -186,7 +186,8 @@ opchain forwards SIGTERM, SIGINT, and SIGHUP to `op` and waits for it to exit.
 opchain reduces accidental exposure. It does not stop a process running as your macOS user.
 
 - By default, token lookup passes the stored token to the delegated `op` process, not your shell or the program it starts. `--pass-token` explicitly exposes it to that program.
-- Secret-printing `op` commands are refused by default. `--allow-reveal` requires an interactive terminal and is a speed bump, not a boundary.
+- Secret-printing `op` commands are refused by default. `--allow-reveal` requires an interactive terminal and is a speed bump, not a boundary. `opchain <identity> --read --value-fd <fd> op read <ref>` relays one value to an inherited private descriptor instead of stdout: opchain prints nothing itself, captures the child's output privately, and refuses the relay when the descriptor is a TTY, a regular file, or its own stdout or stderr endpoint by number or duplication.
+- The `--value-fd` relay runs in opchain's process group. Callers follow one recipe: start opchain with `Setpgid` in its own process group, and send `SIGKILL` to `-pgid` on cancellation and again after `Wait` returns - before waiting for the inherited pipe's EOF - so nothing a read started can outlive it.
 - `token set` reads from a hidden prompt or stdin. Storing the token shells out to `/usr/bin/security add-generic-password`, which takes the token on that child's argv while it runs, so a same-user process can see it there.
 - The real boundary is the service-account token's scope. opchain does not isolate identities that share one macOS account.
 

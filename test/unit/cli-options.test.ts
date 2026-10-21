@@ -327,4 +327,154 @@ describe("parseCliOptions", () => {
       parseError: "Missing value for --profile.",
     });
   });
+
+  test("parses --value-fd between identity and op as an op-execution value flag", () => {
+    const result = parseCliOptions([
+      "human",
+      "--read",
+      "--value-fd",
+      "3",
+      "op",
+      "read",
+      "op://Vault/Item/field",
+    ]);
+
+    expect(result.valueFd).toBe("3");
+    expect(result.accessOverride).toBe("read");
+    expect(result.commandArgs).toEqual([
+      "human",
+      "op",
+      "read",
+      "op://Vault/Item/field",
+    ]);
+  });
+
+  test("parses --value-fd before the identity", () => {
+    const result = parseCliOptions([
+      "--read",
+      "--value-fd",
+      "3",
+      "human",
+      "op",
+      "read",
+      "op://Vault/Item/field",
+    ]);
+
+    expect(result.valueFd).toBe("3");
+    expect(result.accessOverride).toBe("read");
+    expect(result.commandArgs).toEqual([
+      "human",
+      "op",
+      "read",
+      "op://Vault/Item/field",
+    ]);
+  });
+
+  test("parses the attached --value-fd=3 spelling in both positions", () => {
+    const between = parseCliOptions([
+      "human",
+      "--read",
+      "--value-fd=3",
+      "op",
+      "read",
+      "op://Vault/Item/field",
+    ]);
+    expect(between.valueFd).toBe("3");
+
+    const before = parseCliOptions([
+      "--value-fd=3",
+      "--read",
+      "human",
+      "op",
+      "read",
+      "op://Vault/Item/field",
+    ]);
+    expect(before.valueFd).toBe("3");
+    expect(before.commandArgs).toEqual([
+      "human",
+      "op",
+      "read",
+      "op://Vault/Item/field",
+    ]);
+  });
+
+  test("keeps a non-integer fd value for the relay descriptor check to refuse", () => {
+    const result = parseCliOptions([
+      "human",
+      "--read",
+      "--value-fd=abc",
+      "op",
+      "read",
+      "op://Vault/Item/field",
+    ]);
+
+    expect(result.valueFd).toBe("abc");
+    expect(result.parseError).toBeUndefined();
+  });
+
+  test("keeps relay routing when --value-fd has no value", () => {
+    const result = parseCliOptions([
+      "human",
+      "--read",
+      "--value-fd",
+      "op",
+      "read",
+      "op://Vault/Item/field",
+    ]);
+
+    // The relay renders the anchored descriptor-not-open identifier
+    // instead of the generic parser message.
+    expect(result.parseError).toBeUndefined();
+    expect(result.valueFdIntent).toBe(true);
+    expect(result.valueFdMalformed).toBe(true);
+  });
+});
+
+describe("attached --value-fd spelling scope", () => {
+  test("does not rewrite tokens after the op boundary", () => {
+    const result = parseCliOptions([
+      "human",
+      "--read",
+      "op",
+      "run",
+      "--",
+      "prog",
+      "--value-fd=3",
+      "--out-file=x",
+    ]);
+
+    expect(result.valueFd).toBeUndefined();
+    expect(result.commandArgs).toEqual([
+      "human",
+      "op",
+      "run",
+      "--",
+      "prog",
+      "--value-fd=3",
+      "--out-file=x",
+    ]);
+  });
+
+  test("still normalizes the attached spelling in opchain's own prefix", () => {
+    const result = parseCliOptions([
+      "human",
+      "--read",
+      "--value-fd=3",
+      "op",
+      "run",
+      "--",
+      "prog",
+      "--value-fd=9",
+    ]);
+
+    expect(result.valueFd).toBe("3");
+    expect(result.commandArgs).toEqual([
+      "human",
+      "op",
+      "run",
+      "--",
+      "prog",
+      "--value-fd=9",
+    ]);
+  });
 });

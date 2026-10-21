@@ -3,12 +3,17 @@ set -euo pipefail
 
 # find-generic-password -w -s <service> -a <account>
 if [[ "${1:-}" == "find-generic-password" && "${2:-}" == "-w" && "${3:-}" == "-s" && -n "${4:-}" && "${5:-}" == "-a" && -n "${6:-}" ]]; then
+  if [[ -n "${OPCHAIN_TEST_SECURITY_PID_LOG:-}" ]]; then
+    printf '%s\n' "$$" > "$OPCHAIN_TEST_SECURITY_PID_LOG"
+  fi
   if [[ -n "${OPCHAIN_TEST_SECURITY_STDERR:-}" ]]; then
     printf '%s\n' "$OPCHAIN_TEST_SECURITY_STDERR" >&2
     exit "${OPCHAIN_TEST_SECURITY_EXIT_CODE:-1}"
   fi
   if [[ -n "${OPCHAIN_TEST_SECURITY_SLEEP_MS:-}" ]]; then
-    sleep "$(awk "BEGIN { print ${OPCHAIN_TEST_SECURITY_SLEEP_MS} / 1000 }")"
+    # The sleep closes its descriptors so an orphaned stub cannot hold
+    # the provider pipes open past its kill.
+    sleep "$(awk "BEGIN { print ${OPCHAIN_TEST_SECURITY_SLEEP_MS} / 1000 }")" <&- >&- 2>&-
   fi
   if [[ -n "${OPCHAIN_TEST_SECURITY_TOKEN_LOG:-}" ]]; then
     { printf 'service=%s\n' "$4"; printf 'account=%s\n' "$6"; } > "$OPCHAIN_TEST_SECURITY_TOKEN_LOG"
