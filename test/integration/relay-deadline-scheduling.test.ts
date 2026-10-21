@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { withDelayedConfig } from "../helpers/delayed-config.ts";
+import { openFileCapture } from "../helpers/run-relay.ts";
 import { writeAutoReadWriteConfig } from "../helpers/write-opchain-config.ts";
 
 const OP_FIXTURE_PATH = join(process.cwd(), "test/fixtures/bin/op");
@@ -155,6 +156,8 @@ async function runRelayCli(
   let drainTimer: ReturnType<typeof setInterval> | undefined;
   let boundTimer: ReturnType<typeof setTimeout> | undefined;
   const drained: Buffer[] = [];
+  const stdoutCapture = openFileCapture("stdout");
+  const stderrCapture = openFileCapture("stderr");
 
   try {
     writeFd = openSync(fifoPath, fsConstants.O_WRONLY);
@@ -184,14 +187,12 @@ async function runRelayCli(
           : {}),
         ...options.env,
       },
-      stdio: ["pipe", "pipe", "pipe", writeFd],
+      // Output goes to files, and the run settles on the reap: with the
+      // value write blocked on the FIFO at exit, Bun can drop a stdout
+      // or stderr pipe's data and end (see `openFileCapture`).
+      stdio: ["ignore", stdoutCapture.fd, stderrCapture.fd, writeFd],
     });
     child = spawned;
-
-    const stdoutChunks: Buffer[] = [];
-    const stderrChunks: Buffer[] = [];
-    spawned.stdout?.on("data", (chunk: Buffer) => stdoutChunks.push(chunk));
-    spawned.stderr?.on("data", (chunk: Buffer) => stderrChunks.push(chunk));
 
     if (options.drainAfterMs !== undefined) {
       drainStart = setTimeout(() => {
@@ -202,8 +203,8 @@ async function runRelayCli(
 
     const [code, signal] = await new Promise<[number | null, string | null]>(
       (resolve) => {
-        spawned.once("close", (exitCode, closeSignal) => {
-          resolve([exitCode, closeSignal]);
+        spawned.once("exit", (exitCode, exitSignal) => {
+          resolve([exitCode, exitSignal]);
         });
         spawned.once("error", () => {
           resolve([null, "spawn-error"]);
@@ -224,10 +225,12 @@ async function runRelayCli(
         Math.min(prefilledBytes, allDrained.length),
       ),
       result: { code, signal },
-      stderrText: Buffer.concat(stderrChunks).toString("utf8"),
-      stdoutText: Buffer.concat(stdoutChunks).toString("utf8"),
+      stderrText: stderrCapture.read().toString("utf8"),
+      stdoutText: stdoutCapture.read().toString("utf8"),
     };
   } finally {
+    stdoutCapture.close();
+    stderrCapture.close();
     clearTimeout(drainStart);
     clearInterval(drainTimer);
     clearTimeout(boundTimer);

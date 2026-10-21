@@ -4,6 +4,7 @@ import {
   constants as fsConstants,
   mkdtempSync,
   openSync,
+  readFileSync,
   readSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -124,6 +125,11 @@ function captureStream(
 export type GuardedChild = {
   readonly child: ChildProcess;
   readonly completion: Promise<ChildCompletion>;
+  /**
+   * Settles on the child's reap (`exit`), without waiting for any stdio
+   * stream; for runs whose output is captured in files, not pipes.
+   */
+  readonly exited: Promise<ChildCompletion>;
   /** Chunks from stdout, stderr, and a piped descriptor 3, from spawn on. */
   readonly output: {
     readonly stderr: Buffer[];
@@ -188,6 +194,67 @@ function watchCompletion(child: ChildProcess): Promise<ChildCompletion> {
       }
     });
   });
+}
+
+/**
+ * Watches one child for its reap. Like `watchCompletion`, it must be
+ * called synchronously after spawn(). `exit` reports the process itself
+ * ending, while `close` additionally waits for every stdio stream to
+ * close (Node's documented contract), so `exit` alone is used when no
+ * stdio stream carries output that must be awaited.
+ *
+ * @param child - The freshly spawned child.
+ * @returns {Promise<ChildCompletion>} Its exit code and signal.
+ */
+function watchExit(child: ChildProcess): Promise<ChildCompletion> {
+  return new Promise<ChildCompletion>((resolve) => {
+    child.once("exit", (code, signal) => {
+      resolve({ code, signal });
+    });
+    child.on("error", () => {
+      if (child.pid === undefined) {
+        resolve({ code: null, signal: null });
+      }
+    });
+  });
+}
+
+/** A helper-owned regular file standing in for a stdout or stderr pipe. */
+export type FileCapture = {
+  /** Write descriptor to pass as the child's stdio slot. */
+  readonly fd: number;
+  /** Closes the parent's descriptor; the file's bytes stay readable. */
+  close(): void;
+  /** Every byte written so far. */
+  read(): Buffer;
+};
+
+/**
+ * Opens a temporary regular file to capture one child output stream.
+ *
+ * Bun's stdout and stderr pipes are socketpairs read through the event
+ * loop. With a value write still blocked on a FIFO when the CLI exits,
+ * macOS runs were observed where the parent side of the stderr socket
+ * disappeared without one `data`, `end` or `close` event, although the
+ * CLI had written its line and was reaped. The child's `close` then
+ * never fires. A regular file passed as a numeric slot is the parent's
+ * own descriptor shared with the child, so its contents are final once
+ * the child has been reaped, with no event involved.
+ *
+ * @param name - File name for the stream, such as "stderr".
+ * @returns {FileCapture} The open capture; the caller owns closing.
+ */
+export function openFileCapture(name: string): FileCapture {
+  const dir = mkdtempSync(join(tmpdir(), "opchain-relay-capture-"));
+  const path = join(dir, name);
+  const fd = openSync(path, "w");
+  return {
+    close: () => {
+      closeSync(fd);
+    },
+    fd,
+    read: () => readFileSync(path),
+  };
 }
 
 /**
@@ -260,6 +327,7 @@ async function spawnGuarded(
       guarded = {
         child,
         completion: watchCompletion(child),
+        exited: watchExit(child),
         ...captureOutput(child),
       };
       const recordStreamError = (error: Error): void => {
@@ -393,7 +461,19 @@ export async function runRelay(
   let fileFd: number | undefined;
   let fifo: FifoEnds | undefined;
   let fifoPeerMode: FifoPeerMode | undefined;
-  const stdio: ("pipe" | "ignore" | number)[] = ["pipe", "pipe", "pipe"];
+  // A FIFO descriptor 3 can leave the relay's value write blocked when
+  // the CLI exits, the case in which Bun was observed to drop the stderr
+  // pipe's data and end; those runs capture stdout and stderr in files
+  // and settle on the reap (see `openFileCapture`).
+  const fileCaptured =
+    options.stdio3?.kind === "fifo" || options.stdio3?.kind === "raw-fd";
+  const captures = fileCaptured
+    ? { stderr: openFileCapture("stderr"), stdout: openFileCapture("stdout") }
+    : undefined;
+  const stdio: ("pipe" | "ignore" | number)[] =
+    captures === undefined
+      ? ["pipe", "pipe", "pipe"]
+      : ["ignore", captures.stdout.fd, captures.stderr.fd];
   switch (options.stdio3?.kind) {
     case undefined:
     case "pipe":
@@ -431,7 +511,7 @@ export async function runRelay(
 
   // The alias fixture dups fd 1 or 2 onto fd 3 inside the child before
   // exec'ing the CLI; argv rides "$0"/"$@" so nothing is interpolated.
-  const { completion, output, outputEnded } =
+  const { completion, exited, output, outputEnded } =
     options.stdio3?.kind === "duplicate-of"
       ? await spawnGuarded(
           "/bin/sh",
@@ -475,8 +555,10 @@ export async function runRelay(
         })();
 
   // The child's close can precede delivery of its last stdout or stderr
-  // bytes, so each stream's own end is awaited too.
-  const { code, signal } = await completion;
+  // bytes, so each stream's own end is awaited too. File-captured runs
+  // have no output pipe: the reap alone makes the files final.
+  const { code, signal } =
+    captures === undefined ? await completion : await exited;
   await outputEnded;
 
   if (fifoPeerTask !== undefined) {
@@ -494,14 +576,18 @@ export async function runRelay(
   if (fileFd !== undefined) {
     closeSync(fileFd);
   }
+  const stderrBytes = captures?.stderr.read() ?? Buffer.concat(output.stderr);
+  const stdoutBytes = captures?.stdout.read() ?? Buffer.concat(output.stdout);
+  captures?.stderr.close();
+  captures?.stdout.close();
 
   return {
     homePath,
     opLogPath,
     result: { code, signal },
     securityLogPath,
-    stderrText: Buffer.concat(output.stderr).toString("utf8"),
-    stdoutText: Buffer.concat(output.stdout).toString("utf8"),
+    stderrText: stderrBytes.toString("utf8"),
+    stdoutText: stdoutBytes.toString("utf8"),
     valueBytes: Buffer.concat(output.value),
   };
 }

@@ -374,7 +374,7 @@ describe("op --value-fd relay", () => {
     });
 
     test("refuses descriptors 0, 1, and 2", async () => {
-      for (const n of ["1", "2"]) {
+      for (const n of ["0", "1", "2"]) {
         const run = await runRelay(
           ["primary", "--read", "--value-fd", n, "op", "read", REFERENCE],
           { stdio3: { kind: "pipe" } },
