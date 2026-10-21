@@ -106,7 +106,10 @@ The package `@dungle-scrubs/opchain` ships the signed, notarized `dist/opchain`
 and `dist/oprun` for Apple silicon Macs, with no runtime dependencies.
 
 The release workflow stages each `v*` release through npm trusted publishing
-(OIDC, no token). A staged version is not public until the owner approves it
+(OIDC, no token). npm's provenance check accepts only GitHub-hosted runners, so
+a second job on `ubuntu-latest` stages the package from the signed, notarized
+binaries attached to the GitHub release, after checking their SHA-256 sums. If
+that job fails, re-run only it from the Actions page. A staged version is not public until the owner approves it
 with npm 2FA:
 
 ```bash
