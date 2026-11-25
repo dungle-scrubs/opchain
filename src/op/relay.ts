@@ -160,7 +160,8 @@ export function validateRelayCommand(
 export function classifyChildFailure(stderrText: string): ChildFailureClass {
   // op quotes the names it was given ("forbidden" isn't an item...); a name
   // must not decide the class, so quoted text is dropped before matching.
-  const wording = stderrText.replace(/"[^"]*"/g, '""');
+  // Names are quoted Go-style (%q): \" and \\ are escapes inside the name.
+  const wording = stderrText.replace(/"(?:[^"\\]|\\.)*"/g, '""');
   for (const rule of CLASSIFIER_RULES) {
     if (rule.pattern.test(wording)) {
       return rule.failureClass;
