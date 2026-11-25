@@ -4,14 +4,39 @@ import { buildTokenChildEnv } from "../cli/child-env.ts";
 import { parseJsonText } from "../cli/io.ts";
 import { resolveOpTimeoutMs } from "../cli/op-timeout.ts";
 import { resolveOpPath } from "../cli/paths.ts";
+import { type ChildFailureClass, classifyChildFailure } from "./relay.ts";
 
 export type OpItemJsonResult =
   | { readonly ok: true; readonly value: unknown }
   | {
       readonly error: string;
       readonly ok: false;
-      readonly reason: "exec" | "parse";
+      readonly opError: ChildFailureClass;
+      readonly reason: "exec";
+    }
+  | {
+      readonly error: string;
+      readonly ok: false;
+      readonly reason: "parse";
     };
+
+/**
+ * Classifies a failed `op item get` with the relay's ordered rules. The text
+ * is matched, never copied: op's messages echo the selector. A spawn error
+ * reads as unreachable only when it is the timeout.
+ */
+function classifyItemGetFailure(
+  stderr: string,
+  spawnError: Error | undefined,
+): ChildFailureClass {
+  if (spawnError !== undefined) {
+    return (spawnError as NodeJS.ErrnoException).code === "ETIMEDOUT"
+      ? "unreachable"
+      : "unknown";
+  }
+
+  return classifyChildFailure(stderr);
+}
 
 /**
  * Loads one `op item get --format json` payload through the `op` CLI.
@@ -45,6 +70,7 @@ export function readOpItemJson(
     return {
       error: failureMessage,
       ok: false,
+      opError: classifyItemGetFailure(opResult.stderr ?? "", opResult.error),
       reason: "exec",
     };
   }

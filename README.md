@@ -128,7 +128,11 @@ opchain primary secrets validate --project-wide
 `check` validates one named file. `validate` accepts a file or directory;
 `--project-wide` scans every `.env.op` under `projects_dir`.
 Neither prints resolved secret values. `secrets inspect <op://...>` reports
-metadata for one reference, including `expires_at` when present.
+metadata for one reference, including `expires_at` when present. It checks
+that the item has the referenced field or file, and a failure names its
+kind - item not found, field not found, more than one field matches, vault
+not found or not visible to this identity, or 1Password could not be
+reached - without repeating op's own text.
 
 ### Track items that expire
 

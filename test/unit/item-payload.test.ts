@@ -7,36 +7,121 @@ import {
 } from "../../src/commands/item-payload.ts";
 
 describe("parseSecretInspectMetadata", () => {
-  test("extracts sanitized secret metadata", () => {
-    const result = parseSecretInspectMetadata({
-      expires_at: "2026-12-31T00:00:00Z",
-      fields: [
-        { label: "api-key", value: "super-secret-value" },
-        { label: "region", value: "us-east-1" },
-      ],
-      reference: "op://Services/OpenAI/api-key",
-      title: "OpenAI",
-      vault: { id: "vault-uuid-1", name: "Services" },
-    });
+  const payload = {
+    expires_at: "2026-12-31T00:00:00Z",
+    fields: [
+      {
+        id: "api-key",
+        label: "api-key",
+        section: { id: "add more", label: "Details" },
+        value: "super-secret-value",
+      },
+      { id: "region", label: "region", value: "us-east-1" },
+      { id: "notesPlain", value: "" },
+      { id: "k3x9qz", label: "Token", value: "t" },
+    ],
+    files: [
+      {
+        id: "file-uuid-1",
+        name: "key.pem",
+        section: { id: "add more", label: "Details" },
+      },
+    ],
+    title: "OpenAI",
+    vault: { id: "vault-uuid-1", name: "Services" },
+  };
+  const reference = "op://Services/OpenAI/api-key";
+  const parsed = {
+    field: "api-key",
+    item: "OpenAI",
+    section: undefined,
+    vault: "Services",
+  };
 
-    expect(result).toEqual({
-      expiresAt: "2026-12-31T00:00:00Z",
-      fieldLabels: ["api-key", "region"],
-      itemTitle: "OpenAI",
-      reference: "op://Services/OpenAI/api-key",
-      vaultName: "Services",
+  test("extracts sanitized metadata, taking the reference from the caller", () => {
+    expect(parseSecretInspectMetadata(payload, reference, parsed)).toEqual({
+      kind: "ok",
+      metadata: {
+        expiresAt: "2026-12-31T00:00:00Z",
+        fieldLabels: ["api-key", "region", "", "Token"],
+        itemTitle: "OpenAI",
+        reference,
+        vaultName: "Services",
+      },
     });
   });
 
-  test("fails when the fields payload is malformed", () => {
-    const result = parseSecretInspectMetadata({
-      fields: { label: "api-key" },
-      reference: "op://Services/OpenAI/api-key",
-      title: "OpenAI",
-      vault: { id: "vault-uuid-1", name: "Services" },
-    });
+  test("matches a field by its label when its ID differs", () => {
+    expect(
+      parseSecretInspectMetadata(payload, reference, {
+        ...parsed,
+        field: "token",
+      }).kind,
+    ).toBe("ok");
+  });
 
-    expect(result).toBe("Invalid secret inspection payload.");
+  test("matches a file attachment by name or ID, within its section", () => {
+    for (const wanted of [
+      { ...parsed, field: "key.pem" },
+      { ...parsed, field: "KEY.PEM", section: "Details" },
+      { ...parsed, field: "file-uuid-1", section: "add more" },
+    ]) {
+      expect(parseSecretInspectMetadata(payload, reference, wanted).kind).toBe(
+        "ok",
+      );
+    }
+    expect(
+      parseSecretInspectMetadata(payload, reference, {
+        ...parsed,
+        field: "key.pem",
+        section: "Other",
+      }),
+    ).toEqual({ kind: "field_not_found" });
+  });
+
+  test("reports a reference that matches more than one field or file", () => {
+    const twoPasswords = {
+      ...payload,
+      fields: [
+        { id: "password", label: "Login password" },
+        { id: "x7k2", label: "password" },
+      ],
+    };
+    expect(
+      parseSecretInspectMetadata(twoPasswords, reference, {
+        ...parsed,
+        field: "password",
+      }),
+    ).toEqual({ kind: "ambiguous" });
+    // One field matching on both its ID and its label is one match.
+    expect(parseSecretInspectMetadata(payload, reference, parsed).kind).toBe(
+      "ok",
+    );
+  });
+
+  test("reports a field the item does not have", () => {
+    for (const wanted of [
+      { ...parsed, field: "missing" },
+      { ...parsed, section: "Other" },
+      { ...parsed, field: "region", section: "Details" },
+    ]) {
+      expect(parseSecretInspectMetadata(payload, reference, wanted)).toEqual({
+        kind: "field_not_found",
+      });
+    }
+  });
+
+  test("fails when the fields payload is malformed", () => {
+    for (const fields of [{ label: "api-key" }, [{ label: 7 }], ["x"]]) {
+      expect(
+        parseSecretInspectMetadata({ ...payload, fields }, reference, parsed),
+      ).toEqual({ kind: "invalid" });
+    }
+    for (const files of [{ name: "key.pem" }, [{ name: 7 }], ["x"]]) {
+      expect(
+        parseSecretInspectMetadata({ ...payload, files }, reference, parsed),
+      ).toEqual({ kind: "invalid" });
+    }
   });
 });
 

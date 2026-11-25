@@ -144,6 +144,44 @@ describe("child-failure classifier", () => {
     ).toBe("denied");
   });
 
+  test("ignores op's quoted selector names when classifying", () => {
+    expect(
+      classifyChildFailure(
+        '[ERROR] "forbidden" isn\'t an item in the "Services" vault.',
+      ),
+    ).toBe("notfound");
+    expect(
+      classifyChildFailure(
+        '[ERROR] "access denied" isn\'t an item in the "forbidden" vault.',
+      ),
+    ).toBe("notfound");
+    expect(
+      classifyChildFailure(
+        '[ERROR] "network not found" isn\'t a vault in this account.',
+      ),
+    ).toBe("denied");
+  });
+
+  test("drops a quoted name whole when it holds Go-escaped quotes or backslashes", () => {
+    // op quotes names the way Go's %q does: an embedded " is \" and a
+    // backslash is \\. The escapes stay inside the dropped name.
+    expect(
+      classifyChildFailure(
+        '[ERROR] "a\\"b" isn\'t an item in the "Services" vault.',
+      ),
+    ).toBe("notfound");
+    expect(
+      classifyChildFailure(
+        '[ERROR] 2026/10/19 00:31:02 "op://Infra/a\\"forbidden/password" isn\'t a field in the item "a\\"forbidden"',
+      ),
+    ).toBe("notfound");
+    expect(
+      classifyChildFailure(
+        '[ERROR] "back\\\\" isn\'t an item in the "forbidden\\\\" vault.',
+      ),
+    ).toBe("notfound");
+  });
+
   test("classifies permission wording before existence wording", () => {
     expect(classifyChildFailure("access denied: item not found")).toBe(
       "denied",

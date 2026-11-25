@@ -158,8 +158,12 @@ export function validateRelayCommand(
  * @returns {ChildFailureClass} Most specific class, or `unknown`.
  */
 export function classifyChildFailure(stderrText: string): ChildFailureClass {
+  // op quotes the names it was given ("forbidden" isn't an item...); a name
+  // must not decide the class, so quoted text is dropped before matching.
+  // Names are quoted Go-style (%q): \" and \\ are escapes inside the name.
+  const wording = stderrText.replace(/"(?:[^"\\]|\\.)*"/g, '""');
   for (const rule of CLASSIFIER_RULES) {
-    if (rule.pattern.test(stderrText)) {
+    if (rule.pattern.test(wording)) {
       return rule.failureClass;
     }
   }

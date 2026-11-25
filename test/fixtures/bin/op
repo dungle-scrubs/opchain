@@ -138,6 +138,16 @@ if [[ -n "${OPCHAIN_TEST_OP_RELAY_WARN_STDERR:-}" ]]; then
 fi
 
 if [[ "$1" == "item" && "$2" == "get" ]]; then
+  # Real op item get takes an item name, ID or share link, not a whole
+  # op://vault/item/field secret reference: given one, it exits non-zero.
+  # opchain must split the reference into an item and a --vault.
+  for arg in "$@"; do
+    if [[ "$arg" == op://* ]]; then
+      printf '[ERROR] fake op: item get takes an item, not a secret reference\n' >&2
+      exit 1
+    fi
+  done
+
   if [[ -n "${OPCHAIN_TEST_OP_ITEM_STDERR:-}" ]]; then
     printf '%s\n' "$OPCHAIN_TEST_OP_ITEM_STDERR" >&2
     exit "${OPCHAIN_TEST_OP_ITEM_EXIT_CODE:-1}"
@@ -146,7 +156,7 @@ if [[ "$1" == "item" && "$2" == "get" ]]; then
   if [[ -n "${OPCHAIN_TEST_OP_ITEM_JSON:-}" ]]; then
     printf '%s\n' "$OPCHAIN_TEST_OP_ITEM_JSON"
   else
-    printf '%s\n' '{"id":"item-uuid-1","reference":"op://Services/OpenAI/api-key","vault":{"id":"vault-uuid-1","name":"Services"},"title":"OpenAI","fields":[{"label":"api-key","value":"super-secret-value"},{"label":"region","value":"us-east-1"}],"expires_at":"2026-12-31T00:00:00Z"}'
+    printf '%s\n' '{"id":"item-uuid-1","vault":{"id":"vault-uuid-1","name":"Services"},"title":"OpenAI","fields":[{"id":"api-key","label":"api-key","value":"super-secret-value","section":{"id":"add more","label":"Details"}},{"id":"region","label":"region","value":"us-east-1"}],"expires_at":"2026-12-31T00:00:00Z"}'
   fi
   exit 0
 fi
