@@ -5,6 +5,7 @@ import type { CliOptions } from "../cli/options.ts";
 import { resolveExpiryStatePath } from "../cli/paths.ts";
 import { writeTelemetry } from "../cli/telemetry.ts";
 import { readOpItemJson } from "../op/item-json.ts";
+import { parseSecretReference } from "../op/secret-reference.ts";
 import type { RuntimeResult } from "../cli/result.ts";
 
 import {
@@ -52,11 +53,22 @@ export function createExpiryTracker(identityName: string): ExpiryTracker {
 
   return {
     add: (token, reference) => {
+      const parsed = parseSecretReference(reference);
+      if (parsed === undefined) {
+        return {
+          error:
+            "Invalid secret reference. Expected op://<vault>/<item>[/<section>]/<field>.",
+          ok: false,
+        };
+      }
+
+      // op item get takes the item and a --vault, never a whole reference.
       const itemResult = readOpItemJson(
         token,
-        reference,
+        parsed.item,
         "Failed to resolve expiry tracking reference.",
         "Invalid expiry tracking payload.",
+        parsed.vault,
       );
       if (!itemResult.ok) {
         return {

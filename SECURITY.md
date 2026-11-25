@@ -210,6 +210,10 @@ Known limits of this guard, all within the same-user threat model below:
 
 Structure-only inspection goes through `item-structure`, which prints
 labels, types, value presence, and value length - never a value.
+`secrets inspect` splits its reference and asks `op item get` for the item
+in its vault, then checks the field exists; it prints labels only. A failed
+lookup is classified from op's private stderr by the relay's ordered rules
+and reported with a fixed message; op's text is never printed.
 
 ### Subprocess output is not telemetry
 

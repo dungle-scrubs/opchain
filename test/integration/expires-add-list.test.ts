@@ -20,6 +20,7 @@ describe("expires add/list", () => {
     );
 
     writeHumanConfig(homePath);
+    const opLogPath = join(homePath, "op.log");
 
     const addResult = spawnSync(
       process.execPath,
@@ -43,11 +44,16 @@ describe("expires add/list", () => {
           ),
           OPCHAIN_OP_PATH: join(process.cwd(), "test/fixtures/bin/op"),
           OPCHAIN_TEST_SECURITY_TOKEN: "token-for-human-default",
+          OPCHAIN_TEST_OP_LOG: opLogPath,
         },
       },
     );
 
     expect(addResult.status).toBe(0);
+    // op item get takes the item and vault, never the whole reference.
+    expect(readFileSync(opLogPath, "utf8")).toContain(
+      "args=item get --format json --vault Services -- OpenAI",
+    );
     expect(addResult.stdout).toBe(
       "Added expiry tracking for vault-uuid-1/item-uuid-1.\n",
     );

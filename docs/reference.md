@@ -13,7 +13,7 @@ Lookup reference for every opchain command, flag, refusal form, and configuratio
 | `opchain <identity> item-structure <item> [--vault <vault>]` | Print an item's field structure without values. |
 | `opchain <identity> secrets list <file>` | List every `op://` reference in a `.env.op` file. |
 | `opchain <identity> secrets check <file>` | Validate that every reference in one file resolves. |
-| `opchain <identity> secrets inspect <op://...>` | Print metadata for one reference: vault, item, field labels, `expires_at`. |
+| `opchain <identity> secrets inspect <op://...>` | Print metadata for one reference: vault, item, field labels, `expires_at`. Fails with `item not found`, `field not found`, `vault not found or not visible to this identity` or `1Password could not be reached`, never with op's own text. |
 | `opchain <identity> secrets validate [path] [--project-wide]` | Validate a file or directory, defaulting to the current directory. `--project-wide` selects `projects_dir` instead and cannot be combined with a path. |
 | `opchain <identity> expires add <op://...>` | Track one expiring record. |
 | `opchain <identity> expires remove <vault-uuid>/<item-uuid>` | Remove one tracked record. |

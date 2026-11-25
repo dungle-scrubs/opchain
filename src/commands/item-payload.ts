@@ -1,4 +1,5 @@
 import type { ExpiryTrackedItem } from "../expires/state.ts";
+import type { ParsedSecretReference } from "../op/secret-reference.ts";
 
 type SecretInspectMetadata = {
   readonly expiresAt: string | null;
@@ -24,43 +25,99 @@ export type ItemStructure = {
   readonly fields: readonly ItemFieldStructure[];
 };
 
+/** Outcome of reading inspection metadata for one reference. */
+export type SecretInspectParse =
+  | { readonly kind: "field_not_found" }
+  | { readonly kind: "invalid" }
+  | { readonly kind: "ok"; readonly metadata: SecretInspectMetadata };
+
+type InspectField = {
+  readonly id: string;
+  readonly label: string;
+  readonly sectionId: string | null;
+  readonly sectionLabel: string | null;
+};
+
 /**
- * Extracts metadata from one `op item get --format json` payload.
+ * Extracts metadata from one `op item get --format json` payload and checks
+ * that the item has the referenced field. The printed reference is the
+ * caller's: op's item payload carries none. A field matches by ID or label,
+ * case-insensitively, and, when the reference names a section, only within
+ * the section with that ID or label.
  *
  * @param input - Parsed JSON payload.
- * @returns {SecretInspectMetadata | string} Sanitized metadata or an error.
+ * @param reference - The raw reference the caller asked about.
+ * @param parsed - The same reference, split.
+ * @returns {SecretInspectParse} Sanitized metadata, or why there is none.
  */
 export function parseSecretInspectMetadata(
   input: unknown,
-): SecretInspectMetadata | string {
+  reference: string,
+  parsed: ParsedSecretReference,
+): SecretInspectParse {
   try {
     if (!isRecord(input)) {
-      return "Invalid secret inspection payload.";
+      return { kind: "invalid" };
     }
 
-    const reference = readStringProperty(input, "reference");
     const itemTitle = readStringProperty(input, "title");
     const vault = input.vault;
     if (!isRecord(vault)) {
-      return "Invalid secret inspection payload.";
+      return { kind: "invalid" };
     }
 
     const vaultName = readStringProperty(vault, "name");
-    const fieldLabels = readFieldLabels(input.fields);
-    if (typeof fieldLabels === "string") {
-      return fieldLabels;
+    const fields = readInspectFields(input.fields);
+    if (fields === undefined) {
+      return { kind: "invalid" };
+    }
+
+    if (!fields.some((field) => fieldMatches(field, parsed))) {
+      return { kind: "field_not_found" };
     }
 
     return {
-      expiresAt: readOptionalStringProperty(input, "expires_at"),
-      fieldLabels,
-      itemTitle,
-      reference,
-      vaultName,
+      kind: "ok",
+      metadata: {
+        expiresAt: readOptionalStringProperty(input, "expires_at"),
+        fieldLabels: fields.map((field) => field.label),
+        itemTitle,
+        reference,
+        vaultName,
+      },
     };
   } catch {
-    return "Invalid secret inspection payload.";
+    return { kind: "invalid" };
   }
+}
+
+function fieldMatches(
+  field: InspectField,
+  parsed: ParsedSecretReference,
+): boolean {
+  if (
+    !sameName(parsed.field, field.id) &&
+    !sameName(parsed.field, field.label)
+  ) {
+    return false;
+  }
+
+  if (parsed.section === undefined) {
+    return true;
+  }
+
+  return (
+    sameName(parsed.section, field.sectionId) ||
+    sameName(parsed.section, field.sectionLabel)
+  );
+}
+
+function sameName(wanted: string, actual: string | null): boolean {
+  return (
+    actual !== null &&
+    actual.length > 0 &&
+    wanted.toLowerCase() === actual.toLowerCase()
+  );
 }
 
 /**
@@ -186,27 +243,60 @@ export function parseExpiryTrackedItem(
 }
 
 /**
- * Reads string labels from an item field array.
+ * Reads the identifying parts of an item's fields: never their values. A
+ * missing `id` or `label` reads as empty; one of another type is invalid.
  *
  * @param input - Unknown fields payload.
- * @returns {readonly string[] | string} Field labels or an error.
+ * @returns {readonly InspectField[] | undefined} Fields, or undefined when malformed.
  */
-function readFieldLabels(input: unknown): readonly string[] | string {
+function readInspectFields(
+  input: unknown,
+): readonly InspectField[] | undefined {
   if (!Array.isArray(input)) {
-    return "Invalid secret inspection payload.";
+    return undefined;
   }
 
-  const labels: string[] = [];
+  const fields: InspectField[] = [];
   for (const entry of input) {
     if (!isRecord(entry)) {
-      return "Invalid secret inspection payload.";
+      return undefined;
     }
 
-    const label = readStringProperty(entry, "label");
-    labels.push(label);
+    const id = readNameProperty(entry, "id");
+    const label = readNameProperty(entry, "label");
+    if (id === undefined || label === undefined) {
+      return undefined;
+    }
+
+    const section = entry.section;
+    let sectionId: string | null = null;
+    let sectionLabel: string | null = null;
+    if (section !== undefined && section !== null) {
+      if (!isRecord(section)) {
+        return undefined;
+      }
+
+      sectionId = readOptionalStringProperty(section, "id");
+      sectionLabel = readOptionalStringProperty(section, "label");
+    }
+
+    fields.push({ id, label, sectionId, sectionLabel });
   }
 
-  return labels;
+  return fields;
+}
+
+/** Reads an optional string property as a name: absent is "", a non-string is undefined. */
+function readNameProperty(
+  input: Record<string, unknown>,
+  key: string,
+): string | undefined {
+  const value = input[key];
+  if (value === undefined || value === null) {
+    return "";
+  }
+
+  return typeof value === "string" ? value : undefined;
 }
 
 /**

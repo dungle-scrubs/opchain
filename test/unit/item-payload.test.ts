@@ -7,36 +7,60 @@ import {
 } from "../../src/commands/item-payload.ts";
 
 describe("parseSecretInspectMetadata", () => {
-  test("extracts sanitized secret metadata", () => {
-    const result = parseSecretInspectMetadata({
-      expires_at: "2026-12-31T00:00:00Z",
-      fields: [
-        { label: "api-key", value: "super-secret-value" },
-        { label: "region", value: "us-east-1" },
-      ],
-      reference: "op://Services/OpenAI/api-key",
-      title: "OpenAI",
-      vault: { id: "vault-uuid-1", name: "Services" },
-    });
+  const payload = {
+    expires_at: "2026-12-31T00:00:00Z",
+    fields: [
+      {
+        id: "api-key",
+        label: "api-key",
+        section: { id: "add more", label: "Details" },
+        value: "super-secret-value",
+      },
+      { id: "region", label: "region", value: "us-east-1" },
+      { id: "notesPlain", value: "" },
+    ],
+    title: "OpenAI",
+    vault: { id: "vault-uuid-1", name: "Services" },
+  };
+  const reference = "op://Services/OpenAI/api-key";
+  const parsed = {
+    field: "api-key",
+    item: "OpenAI",
+    section: undefined,
+    vault: "Services",
+  };
 
-    expect(result).toEqual({
-      expiresAt: "2026-12-31T00:00:00Z",
-      fieldLabels: ["api-key", "region"],
-      itemTitle: "OpenAI",
-      reference: "op://Services/OpenAI/api-key",
-      vaultName: "Services",
+  test("extracts sanitized metadata, taking the reference from the caller", () => {
+    expect(parseSecretInspectMetadata(payload, reference, parsed)).toEqual({
+      kind: "ok",
+      metadata: {
+        expiresAt: "2026-12-31T00:00:00Z",
+        fieldLabels: ["api-key", "region", ""],
+        itemTitle: "OpenAI",
+        reference,
+        vaultName: "Services",
+      },
     });
   });
 
-  test("fails when the fields payload is malformed", () => {
-    const result = parseSecretInspectMetadata({
-      fields: { label: "api-key" },
-      reference: "op://Services/OpenAI/api-key",
-      title: "OpenAI",
-      vault: { id: "vault-uuid-1", name: "Services" },
-    });
+  test("reports a field the item does not have", () => {
+    for (const wanted of [
+      { ...parsed, field: "missing" },
+      { ...parsed, section: "Other" },
+      { ...parsed, field: "region", section: "Details" },
+    ]) {
+      expect(parseSecretInspectMetadata(payload, reference, wanted)).toEqual({
+        kind: "field_not_found",
+      });
+    }
+  });
 
-    expect(result).toBe("Invalid secret inspection payload.");
+  test("fails when the fields payload is malformed", () => {
+    for (const fields of [{ label: "api-key" }, [{ label: 7 }], ["x"]]) {
+      expect(
+        parseSecretInspectMetadata({ ...payload, fields }, reference, parsed),
+      ).toEqual({ kind: "invalid" });
+    }
   });
 });
 
