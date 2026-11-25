@@ -161,4 +161,49 @@ describe("readOpItemJson", () => {
       });
     }
   });
+
+  test("the fake op refuses a whole secret reference, as the real op does", async () => {
+    const result = await withEnv(
+      { OPCHAIN_OP_PATH: join(process.cwd(), "test/fixtures/bin/op") },
+      async () =>
+        readOpItemJson(
+          "token-from-test",
+          "op://Services/OpenAI/api-key",
+          "item lookup failed",
+          "item payload invalid",
+        ),
+    );
+
+    expect(result.ok).toBe(false);
+  });
+
+  test("reads a spawn timeout as unreachable and another spawn error as unknown", async () => {
+    const timedOut = await withEnv(
+      {
+        OPCHAIN_OP_PATH: join(process.cwd(), "test/fixtures/bin/op"),
+        OPCHAIN_OP_TIMEOUT_MS: "100",
+        OPCHAIN_TEST_OP_SLEEP_MS: "3000",
+      },
+      async () =>
+        readOpItemJson("t", "item-123", "item lookup failed", "invalid"),
+    );
+    expect(timedOut).toEqual({
+      error: "item lookup failed",
+      ok: false,
+      opError: "unreachable",
+      reason: "exec",
+    });
+
+    const missing = await withEnv(
+      { OPCHAIN_OP_PATH: join(process.cwd(), "test/fixtures/bin/no-such-op") },
+      async () =>
+        readOpItemJson("t", "item-123", "item lookup failed", "invalid"),
+    );
+    expect(missing).toEqual({
+      error: "item lookup failed",
+      ok: false,
+      opError: "unknown",
+      reason: "exec",
+    });
+  });
 });

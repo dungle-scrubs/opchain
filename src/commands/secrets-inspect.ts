@@ -70,6 +70,10 @@ export async function runSecretsInspect(
     parsed,
   );
   switch (inspected.kind) {
+    case "ambiguous":
+      return commandFailure(
+        `${INSPECT_FAILED_PREFIX}: more than one field matches; use the field's ID.\n`,
+      );
     case "field_not_found":
       return commandFailure(`${INSPECT_FAILED_PREFIX}: field not found.\n`);
     case "invalid":

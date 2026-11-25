@@ -18,6 +18,14 @@ describe("parseSecretInspectMetadata", () => {
       },
       { id: "region", label: "region", value: "us-east-1" },
       { id: "notesPlain", value: "" },
+      { id: "k3x9qz", label: "Token", value: "t" },
+    ],
+    files: [
+      {
+        id: "file-uuid-1",
+        name: "key.pem",
+        section: { id: "add more", label: "Details" },
+      },
     ],
     title: "OpenAI",
     vault: { id: "vault-uuid-1", name: "Services" },
@@ -35,12 +43,60 @@ describe("parseSecretInspectMetadata", () => {
       kind: "ok",
       metadata: {
         expiresAt: "2026-12-31T00:00:00Z",
-        fieldLabels: ["api-key", "region", ""],
+        fieldLabels: ["api-key", "region", "", "Token"],
         itemTitle: "OpenAI",
         reference,
         vaultName: "Services",
       },
     });
+  });
+
+  test("matches a field by its label when its ID differs", () => {
+    expect(
+      parseSecretInspectMetadata(payload, reference, {
+        ...parsed,
+        field: "token",
+      }).kind,
+    ).toBe("ok");
+  });
+
+  test("matches a file attachment by name or ID, within its section", () => {
+    for (const wanted of [
+      { ...parsed, field: "key.pem" },
+      { ...parsed, field: "KEY.PEM", section: "Details" },
+      { ...parsed, field: "file-uuid-1", section: "add more" },
+    ]) {
+      expect(parseSecretInspectMetadata(payload, reference, wanted).kind).toBe(
+        "ok",
+      );
+    }
+    expect(
+      parseSecretInspectMetadata(payload, reference, {
+        ...parsed,
+        field: "key.pem",
+        section: "Other",
+      }),
+    ).toEqual({ kind: "field_not_found" });
+  });
+
+  test("reports a reference that matches more than one field or file", () => {
+    const twoPasswords = {
+      ...payload,
+      fields: [
+        { id: "password", label: "Login password" },
+        { id: "x7k2", label: "password" },
+      ],
+    };
+    expect(
+      parseSecretInspectMetadata(twoPasswords, reference, {
+        ...parsed,
+        field: "password",
+      }),
+    ).toEqual({ kind: "ambiguous" });
+    // One field matching on both its ID and its label is one match.
+    expect(parseSecretInspectMetadata(payload, reference, parsed).kind).toBe(
+      "ok",
+    );
   });
 
   test("reports a field the item does not have", () => {
@@ -59,6 +115,11 @@ describe("parseSecretInspectMetadata", () => {
     for (const fields of [{ label: "api-key" }, [{ label: 7 }], ["x"]]) {
       expect(
         parseSecretInspectMetadata({ ...payload, fields }, reference, parsed),
+      ).toEqual({ kind: "invalid" });
+    }
+    for (const files of [{ name: "key.pem" }, [{ name: 7 }], ["x"]]) {
+      expect(
+        parseSecretInspectMetadata({ ...payload, files }, reference, parsed),
       ).toEqual({ kind: "invalid" });
     }
   });

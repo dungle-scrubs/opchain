@@ -111,6 +111,10 @@ describe("secrets inspect", () => {
         "Failed to inspect secret reference: 1Password could not be reached.\n",
       ],
       [
+        '[ERROR] "forbidden" isn\'t an item in the "Services" vault.',
+        "Failed to inspect secret reference: item not found.\n",
+      ],
+      [
         "[ERROR] something else went wrong",
         "Failed to inspect secret reference.\n",
       ],
@@ -125,20 +129,73 @@ describe("secrets inspect", () => {
     }
   });
 
-  test("rejects a malformed reference before calling op", () => {
-    const logPath = join(
-      mkdtempSync(join(tmpdir(), "opchain-op-log-")),
-      "op.log",
+  test("rejects a malformed reference before resolving a token or calling op", () => {
+    for (const reference of [
+      "op://Services/OpenAI",
+      "op://Services/OpenAI/api@key",
+    ]) {
+      const logDirectory = mkdtempSync(join(tmpdir(), "opchain-op-log-"));
+      const opLogPath = join(logDirectory, "op.log");
+      const tokenLogPath = join(logDirectory, "token.log");
+      const result = runInspect(reference, {
+        OPCHAIN_TEST_OP_LOG: opLogPath,
+        OPCHAIN_TEST_SECURITY_TOKEN_LOG: tokenLogPath,
+      });
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toBe(
+        "Invalid secret reference. Expected op://<vault>/<item>[/<section>]/<field>.\n",
+      );
+      expect(() => readFileSync(opLogPath, "utf8")).toThrow();
+      expect(() => readFileSync(tokenLogPath, "utf8")).toThrow();
+    }
+  });
+
+  test("reports a reference that matches more than one field", () => {
+    const result = runInspect("op://Services/OpenAI/password", {
+      OPCHAIN_TEST_OP_ITEM_JSON: JSON.stringify({
+        fields: [
+          { id: "password", label: "Login password" },
+          { id: "x7k2", label: "password" },
+        ],
+        id: "item-uuid-1",
+        title: "OpenAI",
+        vault: { id: "vault-uuid-1", name: "Services" },
+      }),
+    });
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toBe(
+      "Failed to inspect secret reference: more than one field matches; use the field's ID.\n",
     );
-    const result = runInspect("op://Services/OpenAI", {
-      OPCHAIN_TEST_OP_LOG: logPath,
+  });
+
+  test("finds a file attachment by name", () => {
+    const result = runInspect("op://Services/OpenAI/key.pem", {
+      OPCHAIN_TEST_OP_ITEM_JSON: JSON.stringify({
+        fields: [{ id: "notesPlain", label: "notesPlain" }],
+        files: [{ id: "file-uuid-1", name: "key.pem" }],
+        id: "item-uuid-1",
+        title: "OpenAI",
+        vault: { id: "vault-uuid-1", name: "Services" },
+      }),
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("reference: op://Services/OpenAI/key.pem");
+  });
+
+  test("reports a timed-out op as 1Password unreachable", () => {
+    const result = runInspect("op://Services/OpenAI/api-key", {
+      OPCHAIN_OP_TIMEOUT_MS: "100",
+      OPCHAIN_TEST_OP_SLEEP_MS: "3000",
     });
 
     expect(result.status).toBe(1);
     expect(result.stderr).toBe(
-      "Invalid secret reference. Expected op://<vault>/<item>[/<section>]/<field>.\n",
+      "Failed to inspect secret reference: 1Password could not be reached.\n",
     );
-    expect(() => readFileSync(logPath, "utf8")).toThrow();
   });
 
   test("fails cleanly when op returns malformed item JSON", () => {

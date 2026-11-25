@@ -36,6 +36,26 @@ describe("parseSecretReference", () => {
     });
   });
 
+  test("accepts the characters 1Password allows: letters, digits, - _ . and spaces", () => {
+    expect(parseSecretReference("op://My Vault/item_1.v2/api-key")).toEqual({
+      field: "api-key",
+      item: "item_1.v2",
+      section: undefined,
+      vault: "My Vault",
+    });
+  });
+
+  test("rejects a segment with a character 1Password does not allow", () => {
+    for (const reference of [
+      "op://Services/OpenAI/api@key",
+      "op://Ser$vices/OpenAI/api-key",
+      "op://Services/Open:AI/api-key",
+      "op://Services/OpenAI/Details#1/api-key",
+    ]) {
+      expect(parseSecretReference(reference)).toBeUndefined();
+    }
+  });
+
   test("rejects references that are not op:// with three or four segments", () => {
     for (const reference of [
       "",

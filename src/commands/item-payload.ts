@@ -27,6 +27,7 @@ export type ItemStructure = {
 
 /** Outcome of reading inspection metadata for one reference. */
 export type SecretInspectParse =
+  | { readonly kind: "ambiguous" }
   | { readonly kind: "field_not_found" }
   | { readonly kind: "invalid" }
   | { readonly kind: "ok"; readonly metadata: SecretInspectMetadata };
@@ -41,9 +42,10 @@ type InspectField = {
 /**
  * Extracts metadata from one `op item get --format json` payload and checks
  * that the item has the referenced field. The printed reference is the
- * caller's: op's item payload carries none. A field matches by ID or label,
- * case-insensitively, and, when the reference names a section, only within
- * the section with that ID or label.
+ * caller's: op's item payload carries none. The last segment names a field
+ * (by ID or label) or a file attachment (by ID or name), case-insensitively,
+ * and, when the reference names a section, only within the section with that
+ * ID or label. More than one match is ambiguous, as it is for `op read`.
  *
  * @param input - Parsed JSON payload.
  * @param reference - The raw reference the caller asked about.
@@ -67,13 +69,22 @@ export function parseSecretInspectMetadata(
     }
 
     const vaultName = readStringProperty(vault, "name");
-    const fields = readInspectFields(input.fields);
-    if (fields === undefined) {
+    const fields = readInspectFields(input.fields, "label");
+    const files =
+      input.files === undefined ? [] : readInspectFields(input.files, "name");
+    if (fields === undefined || files === undefined) {
       return { kind: "invalid" };
     }
 
-    if (!fields.some((field) => fieldMatches(field, parsed))) {
+    const matches = [...fields, ...files].filter((field) =>
+      fieldMatches(field, parsed),
+    ).length;
+    if (matches === 0) {
       return { kind: "field_not_found" };
+    }
+
+    if (matches > 1) {
+      return { kind: "ambiguous" };
     }
 
     return {
@@ -243,14 +254,17 @@ export function parseExpiryTrackedItem(
 }
 
 /**
- * Reads the identifying parts of an item's fields: never their values. A
- * missing `id` or `label` reads as empty; one of another type is invalid.
+ * Reads the identifying parts of an item's fields or file attachments, never
+ * their values or contents. A missing `id` or name reads as empty; one of
+ * another type is invalid.
  *
- * @param input - Unknown fields payload.
- * @returns {readonly InspectField[] | undefined} Fields, or undefined when malformed.
+ * @param input - Unknown `fields` or `files` payload.
+ * @param nameKey - `label` for fields, `name` for files.
+ * @returns {readonly InspectField[] | undefined} Entries, or undefined when malformed.
  */
 function readInspectFields(
   input: unknown,
+  nameKey: "label" | "name",
 ): readonly InspectField[] | undefined {
   if (!Array.isArray(input)) {
     return undefined;
@@ -263,7 +277,7 @@ function readInspectFields(
     }
 
     const id = readNameProperty(entry, "id");
-    const label = readNameProperty(entry, "label");
+    const label = readNameProperty(entry, nameKey);
     if (id === undefined || label === undefined) {
       return undefined;
     }

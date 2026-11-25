@@ -144,6 +144,24 @@ describe("child-failure classifier", () => {
     ).toBe("denied");
   });
 
+  test("ignores op's quoted selector names when classifying", () => {
+    expect(
+      classifyChildFailure(
+        '[ERROR] "forbidden" isn\'t an item in the "Services" vault.',
+      ),
+    ).toBe("notfound");
+    expect(
+      classifyChildFailure(
+        '[ERROR] "access denied" isn\'t an item in the "forbidden" vault.',
+      ),
+    ).toBe("notfound");
+    expect(
+      classifyChildFailure(
+        '[ERROR] "network not found" isn\'t a vault in this account.',
+      ),
+    ).toBe("denied");
+  });
+
   test("classifies permission wording before existence wording", () => {
     expect(classifyChildFailure("access denied: item not found")).toBe(
       "denied",
